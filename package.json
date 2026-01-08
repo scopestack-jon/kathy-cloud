@@ -1,0 +1,47 @@
+{
+  "name": "kathyv3",
+  "version": "1.0.0",
+  "description": "Kathy - Contextual Payment & Workflow Assistant",
+  "displayName": "Kathy",
+  "scripts": {
+    "dev": "plasmo dev",
+    "build": "plasmo build",
+    "package": "plasmo package"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/chrome": "^0.1.32",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "plasmo": "^0.90.5",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "manifest": {
+    "host_permissions": [
+      "http://localhost/*"
+    ],
+    "permissions": [
+      "activeTab",
+      "scripting",
+      "storage",
+      "tabs"
+    ],
+    "web_accessible_resources": [
+      {
+        "resources": ["payment-icon.png", "*.png"],
+        "matches": ["https://app.practicepanther.com/*"]
+      }
+    ],
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "Kathy"
+    }
+  },
+  "icon": "assets/icon128.png"
+}

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Kathy",
+  "version": "1.0.0",
+  "description": "Practice Panther Consent Layer - A legal safeguard for payment processing",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "options_page": "options.html",
+  "host_permissions": [
+    "http://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://app.practicepanther.com/*"],
+      "js": ["content-scripts/practice-panther.tsx"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "payment-icon.png",
+    "48": "payment-icon.png",
+    "96": "payment-icon.png"
+  }
+}
+
