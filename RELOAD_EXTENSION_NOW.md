@@ -275,3 +275,4 @@ If issues persist after reload:
 **Ready to test! Reload the extension now and check the Practice Panther invoices page.** 🚀
 
 
+

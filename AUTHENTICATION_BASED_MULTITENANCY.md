@@ -373,3 +373,4 @@ Every payment tagged with user's organization
 Much better architecture than scraping Practice Panther.
 
 
+

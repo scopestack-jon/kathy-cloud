@@ -376,3 +376,4 @@ await prisma.paymentSession.updateMany({
 **The extension is now multi-tenant ready!** 🎉
 
 
+

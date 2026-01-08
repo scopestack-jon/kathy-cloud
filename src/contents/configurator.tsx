@@ -229,21 +229,75 @@ class ConfiguratorManager {
     const invoiceIdPattern = this.extractInvoiceIdPattern(this.state.invoiceIdSample || '')
     const amountPattern = "\\$?([\\d,]+\\.?\\d*)" // Standard amount pattern
 
+    // Prompt for application name
+    const applicationName = prompt(
+      "What application is this?\n\nExamples: Practice Panther, Clio, MyCase, QuickBooks\n\nEnter application name:"
+    ) || "Custom Application"
+
     const config = {
-      invoiceIdColumnIndex: this.state.invoiceIdColumnIndex!,
-      amountColumnIndex: this.state.amountColumnIndex!,
-      statusColumnIndex: this.state.statusColumnIndex!,
-      invoiceIdPattern,
-      amountPattern
+      applicationName,
+      applicationUrl: window.location.origin,
+      urlPattern: `${window.location.origin}/*`,
+      selectorConfig: {
+        invoiceIdColumn: this.state.invoiceIdColumnIndex!,
+        amountColumn: this.state.amountColumnIndex!,
+        statusColumn: this.state.statusColumnIndex!,
+        invoiceIdPattern,
+        amountPattern,
+        tableSelector: 'table' // Can be enhanced later
+      }
     }
 
     console.log("Kathy: Saving configuration", config)
 
-    // Save to storage
-    await chrome.storage.local.set({ kathyConfig: config })
+    // Check if user is authenticated
+    const { authToken } = await chrome.storage.local.get('authToken')
 
-    // Notify success
-    alert(`✅ Configuration saved!\n\nInvoice ID: Column ${config.invoiceIdColumnIndex}\nAmount: Column ${config.amountColumnIndex}\nStatus: Column ${config.statusColumnIndex}\n\nReload the extension for changes to take effect.`)
+    if (authToken) {
+      // Save to backend API
+      try {
+        const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+        const response = await fetch(`${API_URL}/api/applications`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(config)
+        })
+
+        if (response.ok) {
+          alert(`✅ ${applicationName} configured successfully!\n\n` +
+                `Invoice ID: Column ${config.selectorConfig.invoiceIdColumn}\n` +
+                `Amount: Column ${config.selectorConfig.amountColumn}\n` +
+                `Status: Column ${config.selectorConfig.statusColumn}\n\n` +
+                `Kathy will now work on this application!`)
+        } else {
+          const error = await response.json()
+          alert(`❌ Error saving configuration: ${error.error}\n\nPlease try again or contact support.`)
+        }
+      } catch (error) {
+        console.error('Kathy: Error saving to API:', error)
+        alert(`❌ Network error while saving configuration.\n\nPlease check your connection and try again.`)
+      }
+    } else {
+      // Save locally for trial mode
+      const existingConfigs = localStorage.getItem('kathy_trial_configs')
+      const configs = existingConfigs ? JSON.parse(existingConfigs) : []
+      
+      // Update or add config
+      const existingIndex = configs.findIndex((c: any) => c.applicationName === applicationName)
+      if (existingIndex >= 0) {
+        configs[existingIndex] = config
+      } else {
+        configs.push({ ...config, id: crypto.randomUUID() })
+      }
+      
+      localStorage.setItem('kathy_trial_configs', JSON.stringify(configs))
+      
+      alert(`✅ ${applicationName} configured (Trial Mode)!\n\n` +
+            `Sign up to sync across devices and unlock unlimited payments.`)
+    }
 
     this.cancel()
   }

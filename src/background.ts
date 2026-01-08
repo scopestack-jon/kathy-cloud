@@ -1,5 +1,7 @@
 // Background service worker for Kathy extension
-// Minimal implementation with no automated behavior
+// Handles authentication and message routing
+
+import { initSupabaseAuth } from './lib/supabase'
 
 // Logging helper
 function kathyLog(message: string, extra?: any) {
@@ -10,12 +12,15 @@ function kathyLog(message: string, extra?: any) {
   }
 }
 
+// Initialize Supabase auth listener
+initSupabaseAuth()
+
 // Extension installed handler
 chrome.runtime.onInstalled.addListener((details) => {
   kathyLog("Extension installed", { reason: details.reason })
 })
 
-// Message handler for cloud logging
+// Message handler for cloud logging and auth
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "cloudLog") {
     handleCloudLog(message.payload)
@@ -25,6 +30,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message })
       })
     return true // Keep message channel open for async response
+  }
+  
+  if (message.type === 'checkAuth') {
+    // Check authentication status
+    chrome.storage.local.get(['authToken', 'user'], (result) => {
+      sendResponse({
+        isAuthenticated: !!result.authToken,
+        user: result.user || null
+      })
+    })
+    return true
+  }
+  
+  if (message.type === 'openPanel') {
+    // Handle panel opening
+    kathyLog('Opening panel for invoice:', message.data)
+    sendResponse({ success: true })
+    return true
+  }
+  
+  if (message.type === 'startConfiguration' || message.type === 'start-visual-config') {
+    // Send message to configurator content script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'start-visual-config' })
+      }
+    })
+    sendResponse({ success: true })
+    return true
   }
 })
 
@@ -57,6 +91,7 @@ async function handleCloudLog(payload: any): Promise<void> {
 }
 
 kathyLog("Background service worker initialized")
+
 
 
 
