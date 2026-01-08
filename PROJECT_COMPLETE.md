@@ -190,3 +190,4 @@ The Kathy Chrome Extension is complete and ready for use. All requirements from 
 For questions or issues, refer to the documentation files or check console logs with the `Kathy:` prefix.
 
 
+

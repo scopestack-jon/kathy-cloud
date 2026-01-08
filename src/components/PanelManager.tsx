@@ -132,3 +132,4 @@ export const panelManager = PanelManager.getInstance()
 export type { PanelEntity }
 export { PANEL_EVENTS }
 
+

@@ -320,3 +320,4 @@ cat /Users/jonscott/.cursor/projects/Users-jonscott-Desktop-kathyv3/terminals/3.
 
 Load the extension in Chrome and start testing the new contextual UX features.
 
+

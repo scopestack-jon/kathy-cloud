@@ -123,3 +123,4 @@ After rebuilding, check:
 
 **Note:** The SVG is ready to use. You just need to convert it to PNG files at the specified sizes using one of the methods above!
 
+
