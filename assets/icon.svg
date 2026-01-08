@@ -1,6 +1,6 @@
 <svg width="128" height="128" xmlns="http://www.w3.org/2000/svg">
   <!-- Green circle background matching Kathy badge -->
-  <circle cx="64" cy="64" r="60" fill="#48AF50"/>
+  <circle cx="64" cy="64" r="60" fill="#4CAF50"/>
   <!-- White K letter -->
   <text x="64" y="64" font-family="Arial, Helvetica, sans-serif" font-size="80" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">K</text>
 </svg>
