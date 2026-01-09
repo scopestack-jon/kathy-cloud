@@ -20,6 +20,21 @@ chrome.runtime.onInstalled.addListener((details) => {
   kathyLog("Extension installed", { reason: details.reason })
 })
 
+// Listen for auth messages from the OAuth callback page
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', async (event) => {
+    if (event.data.type === 'kathy-auth-success') {
+      kathyLog('Received auth success message')
+      // Store the session
+      await chrome.storage.local.set({
+        authToken: event.data.session.access_token,
+        user: event.data.session.user
+      })
+      kathyLog('Auth token stored in extension')
+    }
+  })
+}
+
 // Message handler for cloud logging and auth
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "cloudLog") {

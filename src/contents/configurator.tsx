@@ -3,7 +3,11 @@ import React, { useState } from "react"
 
 // Plasmo content script configuration
 export const config = {
-  matches: ["https://app.practicepanther.com/*"],
+  matches: ["<all_urls>"],
+  exclude_matches: [
+    "https://kathy-cloud.vercel.app/auth/*",
+    "http://localhost:3000/auth/*"
+  ],
   run_at: "document_idle"
 }
 

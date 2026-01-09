@@ -1,10 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
+import { supabase } from '~lib/supabase'
 
 type TabView = 'home' | 'settings'
 
+interface AuthState {
+  isAuthenticated: boolean
+  user: any | null
+  loading: boolean
+}
+
 function PopupPage() {
   const [currentTab, setCurrentTab] = useState<TabView>('home')
+  const [authState, setAuthState] = useState<AuthState>({
+    isAuthenticated: false,
+    user: null,
+    loading: true
+  })
   const [userConfig, setUserConfig] = useState({
     organizationId: '',
     userId: '',
@@ -21,6 +33,9 @@ function PopupPage() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
+    // Check authentication status
+    checkAuthStatus()
+    
     // Load configuration
     chrome.storage.local.get(['kathyUser', 'kathyConfig'], (result) => {
       if (result.kathyUser) {
@@ -32,6 +47,124 @@ function PopupPage() {
       }
     })
   }, [])
+
+  const checkAuthStatus = async () => {
+    try {
+      // Check chrome.storage for auth token (stored by the auth callback content script)
+      const result = await chrome.storage.local.get(['authToken', 'user', 'organizationId'])
+      
+      console.log('Kathy: Checking auth status...', result)
+      
+      if (result.authToken && result.user) {
+        // If we have a token but no organizationId, fetch it from the API
+        if (!result.organizationId) {
+          console.log('Kathy: Have token but no organizationId, fetching from API...')
+          try {
+            const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'https://kathy-cloud.vercel.app'
+            const response = await fetch(`${API_URL}/api/auth/me`, {
+              headers: { 'Authorization': `Bearer ${result.authToken}` }
+            })
+            
+            if (response.ok) {
+              const data = await response.json()
+              console.log('Kathy: Fetched user profile:', data.user)
+              console.log('Kathy: Organization ID:', data.user.organizationId)
+              
+              // Store the organizationId
+              await chrome.storage.local.set({
+                organizationId: data.user.organizationId,
+                user: {
+                  id: data.user.id,
+                  email: data.user.email,
+                  role: data.user.role
+                }
+              })
+              
+              setAuthState({
+                isAuthenticated: true,
+                user: {
+                  ...data.user,
+                  organization: data.user.organization // Include organization info
+                },
+                loading: false
+              })
+              setUserConfig({
+                organizationId: data.user.organizationId,
+                userId: data.user.id,
+                email: data.user.email
+              })
+              setIsConfigured(true)
+              console.log(`Kathy: User is authenticated: ${data.user.email}, Org: ${data.user.organization?.name}`)
+            } else {
+              // Try to get error details
+              let errorDetails = response.statusText
+              try {
+                const errorData = await response.json()
+                errorDetails = errorData.details || errorData.error || response.statusText
+              } catch (e) {
+                // Ignore JSON parse errors
+              }
+              
+              console.error('Kathy: Failed to fetch user profile:', response.status, errorDetails)
+              // Keep them authenticated even if org fetch fails
+              setAuthState({
+                isAuthenticated: true,
+                user: result.user,
+                loading: false
+              })
+              setUserConfig({
+                organizationId: '',
+                userId: result.user.id,
+                email: result.user.email
+              })
+              console.warn('Kathy: Using stored user data, org fetch failed')
+            }
+          } catch (error) {
+            console.error('Kathy: Error fetching user profile:', error)
+            // Keep them authenticated even if org fetch fails
+            setAuthState({
+              isAuthenticated: true,
+              user: result.user,
+              loading: false
+            })
+            setUserConfig({
+              organizationId: '',
+              userId: result.user.id,
+              email: result.user.email
+            })
+            console.warn('Kathy: Using stored user data, org fetch errored')
+          }
+        } else {
+          console.log('Kathy: User is authenticated:', result.user.email)
+          setAuthState({
+            isAuthenticated: true,
+            user: result.user,
+            loading: false
+          })
+          setUserConfig({
+            organizationId: result.organizationId,
+            userId: result.user.id,
+            email: result.user.email
+          })
+          setIsConfigured(true)
+        }
+      } else {
+        console.log('Kathy: No auth token found')
+        setAuthState({
+          isAuthenticated: false,
+          user: null,
+          loading: false
+        })
+      }
+    } catch (error) {
+      console.error('Kathy: Auth check error:', error)
+      setAuthState({
+        isAuthenticated: false,
+        user: null,
+        loading: false
+      })
+    }
+  }
 
   const handleUserConfigChange = (field: string, value: string) => {
     setUserConfig({ ...userConfig, [field]: value })
@@ -54,8 +187,59 @@ function PopupPage() {
     })
   }
 
+  const handleLogin = () => {
+    try {
+      const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+      console.log('Kathy: Opening login page at:', API_URL)
+      
+      // Open login page in new tab
+      chrome.tabs.create({ 
+        url: `${API_URL}/auth/login?redirect=extension` 
+      }, (tab) => {
+        if (chrome.runtime.lastError) {
+          console.error('Kathy: Error opening tab:', chrome.runtime.lastError)
+          alert('Error opening login page: ' + chrome.runtime.lastError.message)
+        } else {
+          console.log('Kathy: Opened login tab:', tab?.id)
+        }
+      })
+      
+      // Don't close immediately - let the tab open first
+      setTimeout(() => window.close(), 100)
+    } catch (error) {
+      console.error('Kathy: Login error:', error)
+      alert('Error: ' + error)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      console.log('Kathy: Logging out...')
+      // Clear auth data from chrome.storage
+      await chrome.storage.local.remove(['authToken', 'user'])
+      
+      // Try to sign out from Supabase (optional, in case there's a session)
+      try {
+        await supabase.auth.signOut()
+      } catch (e) {
+        console.log('Kathy: Supabase signout skipped (no session)')
+      }
+      
+      setAuthState({
+        isAuthenticated: false,
+        user: null,
+        loading: false
+      })
+      
+      console.log('Kathy: Logged out successfully')
+    } catch (error) {
+      console.error('Kathy: Logout error:', error)
+    }
+  }
+
   const openDashboard = () => {
-    chrome.tabs.create({ url: 'http://localhost:3000/dashboard' })
+    const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+    chrome.tabs.create({ url: `${API_URL}/dashboard` })
     window.close()
   }
 
@@ -325,42 +509,93 @@ function PopupPage() {
         <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>v1.0.0</p>
       </div>
 
-      {/* User Info */}
-      {isConfigured ? (
+      {/* Authentication Status */}
+      {authState.loading ? (
+        <div style={{
+          background: '#f5f5f5',
+          padding: '12px',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          textAlign: 'center',
+          color: '#666'
+        }}>
+          Loading...
+        </div>
+      ) : authState.isAuthenticated ? (
         <div style={{
           background: '#E8F5E9',
-          padding: '12px',
+          padding: '16px',
           borderRadius: '8px',
           marginBottom: '16px',
           border: '1px solid #4CAF50'
         }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Organization</div>
-          <div style={{ fontSize: '14px', fontWeight: '600', color: '#2E7D32' }}>
-            {userConfig.organizationId}
-          </div>
-          {userConfig.email && (
-            <>
-              <div style={{ fontSize: '11px', color: '#666', marginTop: '8px', marginBottom: '4px' }}>Email</div>
-              <div style={{ fontSize: '12px', color: '#666' }}>
-                {userConfig.email}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: '600', color: '#2E7D32', marginBottom: '8px' }}>
+                Welcome, {authState.user?.email?.split('@')[0] || 'User'}! 👋
               </div>
-            </>
-          )}
+              <div style={{ fontSize: '13px', color: '#555', marginBottom: '4px' }}>
+                {authState.user?.email}
+              </div>
+              {(authState.user?.organization?.name || userConfig.organizationId) && (
+                <div style={{ 
+                  fontSize: '13px', 
+                  color: '#666',
+                  marginTop: '8px',
+                  paddingTop: '8px',
+                  borderTop: '1px solid rgba(76, 175, 80, 0.2)'
+                }}>
+                  <strong>Organization:</strong> {authState.user?.organization?.name || userConfig.organizationId}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                background: 'white',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                color: '#666',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
       ) : (
         <div style={{
-          background: '#FFF3E0',
+          background: '#E3F2FD',
           padding: '12px',
           borderRadius: '8px',
           marginBottom: '16px',
-          border: '1px solid #FF9800'
+          border: '1px solid #2196F3'
         }}>
-          <div style={{ fontSize: '13px', color: '#E65100', fontWeight: '500' }}>
-            ⚠️ Setup Required
+          <div style={{ fontSize: '13px', color: '#1565C0', fontWeight: '500', marginBottom: '8px' }}>
+            🔐 Sign in to Kathy
           </div>
-          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-            Configure your organization in settings.
+          <div style={{ fontSize: '12px', color: '#666', marginBottom: '12px' }}>
+            Access your organization, save configurations, and track payments.
           </div>
+          <button
+            onClick={handleLogin}
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: 'white',
+              background: '#4CAF50',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            Sign In / Sign Up
+          </button>
         </div>
       )}
 

@@ -4,6 +4,10 @@ import type { PlasmoCSConfig } from 'plasmo'
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
+  exclude_matches: [
+    "https://kathy-cloud.vercel.app/auth/*",
+    "http://localhost:3000/auth/*"
+  ],
   run_at: "document_idle",
   all_frames: false
 }
