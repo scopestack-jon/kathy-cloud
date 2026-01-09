@@ -25,11 +25,18 @@ function kathyLog(message: string, extra?: any) {
 // API helper functions
 async function createPaymentSession(invoiceData: InvoiceData) {
   try {
+    // Get auth token from chrome.storage
+    const { authToken } = await chrome.storage.local.get(['authToken'])
+    
+    if (!authToken) {
+      throw new Error('Not authenticated. Please sign in to the Kathy extension.')
+    }
+    
     const response = await fetch(`${KATHY_CLOUD_URL}/api/payments`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_SECRET_KEY}`
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
         invoiceId: invoiceData.invoiceId,
@@ -53,9 +60,16 @@ async function createPaymentSession(invoiceData: InvoiceData) {
 
 async function checkPaymentStatus(paymentSessionId: string) {
   try {
+    // Get auth token from chrome.storage
+    const { authToken } = await chrome.storage.local.get(['authToken'])
+    
+    if (!authToken) {
+      throw new Error('Not authenticated. Please sign in to the Kathy extension.')
+    }
+    
     const response = await fetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/status`, {
       headers: {
-        'Authorization': `Bearer ${API_SECRET_KEY}`
+        'Authorization': `Bearer ${authToken}`
       }
     })
 
@@ -431,9 +445,16 @@ function createKathyBadge(invoiceData: InvoiceData): HTMLButtonElement {
 // Check if invoice has been paid and confirmed
 async function checkIfPaid(invoiceId: string): Promise<boolean> {
   try {
+    // Get auth token from chrome.storage
+    const { authToken } = await chrome.storage.local.get(['authToken'])
+    
+    if (!authToken) {
+      return false // Not authenticated, can't check
+    }
+    
     const response = await fetch(`${KATHY_CLOUD_URL}/api/entities/invoice/${invoiceId}`, {
       headers: {
-        'Authorization': `Bearer ${API_SECRET_KEY}`
+        'Authorization': `Bearer ${authToken}`
       }
     })
     

@@ -56,27 +56,29 @@ function PopupPage() {
       console.log('Kathy: Checking auth status...', result)
       
       if (result.authToken && result.user) {
-        // If we have a token but no organizationId, fetch it from the API
-        if (!result.organizationId) {
-          console.log('Kathy: Have token but no organizationId, fetching from API...')
-          try {
-            const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'https://kathy-cloud.vercel.app'
-            const response = await fetch(`${API_URL}/api/auth/me`, {
-              headers: { 'Authorization': `Bearer ${result.authToken}` }
-            })
+        // Always fetch from API to get latest user data (firstName, lastName, organization)
+        console.log('Kathy: Fetching latest user profile from API...')
+        try {
+          const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'https://kathy-cloud.vercel.app'
+          const response = await fetch(`${API_URL}/api/auth/me`, {
+            headers: { 'Authorization': `Bearer ${result.authToken}` }
+          })
             
             if (response.ok) {
               const data = await response.json()
               console.log('Kathy: Fetched user profile:', data.user)
               console.log('Kathy: Organization ID:', data.user.organizationId)
               
-              // Store the organizationId
+              // Store the organizationId and user data
               await chrome.storage.local.set({
                 organizationId: data.user.organizationId,
                 user: {
                   id: data.user.id,
                   email: data.user.email,
-                  role: data.user.role
+                  firstName: data.user.firstName,
+                  lastName: data.user.lastName,
+                  role: data.user.role,
+                  organization: data.user.organization
                 }
               })
               
@@ -134,20 +136,6 @@ function PopupPage() {
             })
             console.warn('Kathy: Using stored user data, org fetch errored')
           }
-        } else {
-          console.log('Kathy: User is authenticated:', result.user.email)
-          setAuthState({
-            isAuthenticated: true,
-            user: result.user,
-            loading: false
-          })
-          setUserConfig({
-            organizationId: result.organizationId,
-            userId: result.user.id,
-            email: result.user.email
-          })
-          setIsConfigured(true)
-        }
       } else {
         console.log('Kathy: No auth token found')
         setAuthState({
