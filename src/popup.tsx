@@ -532,7 +532,11 @@ function PopupPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
             <div>
               <div style={{ fontSize: '16px', fontWeight: '600', color: '#2E7D32', marginBottom: '8px' }}>
-                Welcome, {authState.user?.email?.split('@')[0] || 'User'}! 👋
+                Welcome, {
+                  authState.user?.firstName 
+                    ? authState.user.firstName.charAt(0).toUpperCase() + authState.user.firstName.slice(1).toLowerCase()
+                    : authState.user?.email?.split('@')[0] || 'User'
+                }! 👋
               </div>
               <div style={{ fontSize: '13px', color: '#555', marginBottom: '4px' }}>
                 {authState.user?.email}
