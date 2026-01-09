@@ -109,8 +109,16 @@ class ConfiguratorManager {
   private clickHandler: ((e: MouseEvent) => void) | null = null
   private highlightedCell: HTMLElement | null = null
 
-  start() {
+  start(appName?: string, urlPattern?: string) {
     console.log("Kathy: Starting configuration mode")
+    
+    // Store app info if provided
+    if (appName) {
+      this.appName = appName
+    }
+    if (urlPattern) {
+      this.appUrl = urlPattern
+    }
     
     // Initialize state
     this.state = {
@@ -233,15 +241,18 @@ class ConfiguratorManager {
     const invoiceIdPattern = this.extractInvoiceIdPattern(this.state.invoiceIdSample || '')
     const amountPattern = "\\$?([\\d,]+\\.?\\d*)" // Standard amount pattern
 
-    // Prompt for application name
-    const applicationName = prompt(
+    // Use stored appName or prompt if not provided
+    const applicationName = this.appName || prompt(
       "What application is this?\n\nExamples: Practice Panther, Clio, MyCase, QuickBooks\n\nEnter application name:"
     ) || "Custom Application"
+
+    // Use stored appUrl or derive from current page
+    const urlPattern = this.appUrl || `${window.location.origin}/*`
 
     const config = {
       applicationName,
       applicationUrl: window.location.origin,
-      urlPattern: `${window.location.origin}/*`,
+      urlPattern,
       selectorConfig: {
         invoiceIdColumn: this.state.invoiceIdColumnIndex!,
         amountColumn: this.state.amountColumnIndex!,
@@ -355,7 +366,7 @@ export const configuratorManager = new ConfiguratorManager()
 // Listen for messages from popup/options page
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'start-visual-config' || message.type === 'startConfiguration') {
-    configuratorManager.start()
+    configuratorManager.start(message.appName, message.urlPattern)
     sendResponse({ success: true })
   }
   return true

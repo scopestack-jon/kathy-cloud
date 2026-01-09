@@ -65,12 +65,10 @@ class UniversalKathyInjector {
       console.log(`Kathy: Detected ${this.appConfig.applicationName}`)
       this.injectUI()
       this.setupObserver()
-    } else if (this.isAuthenticated) {
-      console.log('Kathy: No configuration for this application')
-      this.showConfigPrompt()
     } else {
-      // Not authenticated and no config - do nothing
-      console.log('Kathy: Not authenticated, skipping')
+      // No configuration for this URL - do nothing
+      // Users should explicitly add applications via the popup
+      console.log('Kathy: No configuration for this application')
     }
   }
 
@@ -240,6 +238,20 @@ class UniversalKathyInjector {
   }
 
   private showConfigPrompt() {
+    // Check if user has permanently dismissed config prompts
+    const dismissed = localStorage.getItem('kathy_config_prompt_dismissed')
+    if (dismissed === 'true') {
+      console.log('Kathy: Config prompt dismissed by user')
+      return
+    }
+    
+    // Only show on pages with tables (likely to have invoice data)
+    const hasTables = document.querySelectorAll('table').length > 0
+    if (!hasTables) {
+      console.log('Kathy: No tables found, skipping config prompt')
+      return
+    }
+    
     const banner = document.createElement('div')
     banner.id = 'kathy-config-prompt'
     banner.style.cssText = `
@@ -258,8 +270,8 @@ class UniversalKathyInjector {
     
     banner.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; gap: 16px;">
-        <strong>🎯 Kathy Extension Active</strong>
-        <span>This application isn't configured yet.</span>
+        <strong>🎯 Kathy Extension</strong>
+        <span>Want to collect payments here? Configure this app.</span>
         <button id="kathy-config-btn" style="
           padding: 6px 16px;
           background: white;
@@ -281,7 +293,7 @@ class UniversalKathyInjector {
           cursor: pointer;
           font-size: 14px;
         ">
-          Dismiss
+          Don't Ask Again
         </button>
       </div>
     `
@@ -294,7 +306,9 @@ class UniversalKathyInjector {
     }
     
     document.getElementById('kathy-dismiss-btn')!.onclick = () => {
+      localStorage.setItem('kathy_config_prompt_dismissed', 'true')
       banner.remove()
+      console.log('Kathy: Config prompts permanently dismissed')
     }
   }
 

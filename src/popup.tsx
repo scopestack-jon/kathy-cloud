@@ -240,6 +240,50 @@ function PopupPage() {
     })
   }
 
+  const addNewApplication = () => {
+    // Get current tab URL
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const currentUrl = tabs[0]?.url || ''
+      
+      // Ask for application name
+      const appName = prompt('What application is this?\n\nExamples: Practice Panther, Clio, MyCase', '')
+      
+      if (!appName || !appName.trim()) {
+        return
+      }
+      
+      // Extract domain from current URL
+      let suggestedPattern = '*'
+      try {
+        const url = new URL(currentUrl)
+        suggestedPattern = `${url.origin}/*`
+      } catch (e) {
+        // Invalid URL
+      }
+      
+      // Ask for URL pattern
+      const urlPattern = prompt(
+        `URL Pattern for ${appName}:\n\nEnter the URL pattern where Kathy should work.\nUse * as wildcard.\n\nExamples:\n- https://app.practicepanther.com/*\n- https://app.clio.com/matters/*`,
+        suggestedPattern
+      )
+      
+      if (!urlPattern || !urlPattern.trim()) {
+        return
+      }
+      
+      // Now start visual config on the current tab
+      if (tabs[0]?.id) {
+        // Send app info to content script
+        chrome.tabs.sendMessage(tabs[0].id, { 
+          type: 'start-visual-config',
+          appName: appName.trim(),
+          urlPattern: urlPattern.trim()
+        })
+        window.close()
+      }
+    })
+  }
+
   if (currentTab === 'settings') {
     return (
       <div style={{
@@ -349,25 +393,47 @@ function PopupPage() {
         {/* Table Configuration Section */}
         <div style={{ marginBottom: '24px' }}>
           <h3 style={{ fontSize: '14px', color: '#4CAF50', marginBottom: '12px', fontWeight: '600' }}>
-            ⚙️ Invoice Table Configuration
+            📱 Applications
           </h3>
 
           <button
-            onClick={startVisualConfig}
+            onClick={addNewApplication}
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '13px',
+              fontWeight: '600',
+              color: 'white',
+              background: '#4CAF50',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginBottom: '10px'
+            }}
+          >
+            ➕ Add New Application
+          </button>
+
+          <button
+            onClick={() => {
+              const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'https://kathy-cloud.vercel.app'
+              chrome.tabs.create({ url: `${API_URL}/dashboard/applications` })
+              window.close()
+            }}
             style={{
               width: '100%',
               padding: '10px',
               fontSize: '13px',
               fontWeight: '500',
-              color: 'white',
-              background: '#2196F3',
-              border: 'none',
+              color: '#666',
+              background: 'white',
+              border: '1px solid #ddd',
               borderRadius: '4px',
               cursor: 'pointer',
               marginBottom: '16px'
             }}
           >
-            ✨ Visual Configuration
+            📋 Manage Applications
           </button>
 
           <div style={{ marginBottom: '16px' }}>
