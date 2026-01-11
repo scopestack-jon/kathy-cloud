@@ -1,0 +1,11 @@
+# Ralph Progress Log
+Started: 2026-01-11
+
+## Codebase Patterns
+- Extension uses Plasmo framework with React
+- Content scripts in src/contents/ (practice-panther.tsx, universal.tsx)
+- Backend is Next.js in kathy-cloud/ subdirectory
+- Supabase for auth, Prisma for ORM
+- DOM manipulation for invoice detection (table scanning)
+- Chrome storage for auth tokens and config
+---
