@@ -84,6 +84,66 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function waitForNavigation(expectedPattern?: string, timeout = 10000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now()
+    const startUrl = window.location.href
+
+    const checkNavigation = () => {
+      const currentUrl = window.location.href
+
+      if (currentUrl !== startUrl) {
+        if (expectedPattern) {
+          const regex = new RegExp(expectedPattern)
+          if (regex.test(currentUrl)) {
+            waitForPageReady().then(resolve)
+            return
+          }
+        } else {
+          waitForPageReady().then(resolve)
+          return
+        }
+      }
+
+      if (Date.now() - startTime >= timeout) {
+        reject(new Error(`Navigation timeout: expected ${expectedPattern || 'any URL change'}`))
+        return
+      }
+
+      setTimeout(checkNavigation, 100)
+    }
+
+    setTimeout(checkNavigation, 100)
+  })
+}
+
+function waitForPageReady(timeout = 5000): Promise<void> {
+  return new Promise((resolve) => {
+    if (document.readyState === 'complete') {
+      setTimeout(resolve, 500)
+      return
+    }
+
+    const startTime = Date.now()
+
+    const checkReady = () => {
+      if (document.readyState === 'complete') {
+        setTimeout(resolve, 500)
+        return
+      }
+
+      if (Date.now() - startTime >= timeout) {
+        resolve()
+        return
+      }
+
+      setTimeout(checkReady, 100)
+    }
+
+    checkReady()
+  })
+}
+
 async function executeAction(action: RecordedAction, element: HTMLElement): Promise<void> {
   switch (action.type) {
     case 'click':
@@ -171,7 +231,12 @@ export class ActionPlayer {
         try {
           const element = await waitForElement(action.selector, this.options.elementWaitTimeout)
           await executeAction(action, element)
-          await delay(this.options.delayBetweenActions)
+
+          if (action.waitForNavigation) {
+            await waitForNavigation(action.expectedUrlPattern)
+          } else {
+            await delay(this.options.delayBetweenActions)
+          }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error))
           this.options.onError?.(err, action, i)

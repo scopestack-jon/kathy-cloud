@@ -26,3 +26,17 @@ Started: 2026-01-11
 - Pause/resume support for auth wall handling
 
 **Typecheck:** Passes for new files
+
+## Task 4: Page Navigation Detection ✅
+**Completed:** 2026-01-11
+
+**Changes:**
+- Added expectedUrlPattern and waitForNavigation fields to RecordedAction
+- Added waitForNavigation() function to detect URL changes
+- Added waitForPageReady() to wait for DOM stabilization after navigation
+- ActionPlayer now waits for navigation when action.waitForNavigation is true
+
+**Key patterns:**
+- Navigation detected via URL comparison (polling every 100ms)
+- Page ready = document.readyState === 'complete' + 500ms buffer
+- Configurable expected URL pattern via regex

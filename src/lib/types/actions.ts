@@ -15,6 +15,8 @@ export interface RecordedAction {
   value?: string
   timestamp: number
   targetUrl?: string
+  expectedUrlPattern?: string
+  waitForNavigation?: boolean
 }
 
 export interface ActionSequence {
