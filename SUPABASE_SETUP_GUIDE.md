@@ -231,3 +231,4 @@ After Supabase setup is complete:
 
 **Support:** If you encounter issues, check Supabase docs at https://supabase.com/docs
 
+
