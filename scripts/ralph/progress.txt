@@ -9,3 +9,20 @@ Started: 2026-01-11
 - DOM manipulation for invoice detection (table scanning)
 - Chrome storage for auth tokens and config
 ---
+
+## Task 3: Action Recorder Infrastructure ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/lib/types/actions.ts - TypeScript interfaces for actions, selectors, sequences
+- src/lib/action-recorder.ts - ActionRecorder class for capturing user actions
+- src/lib/action-player.ts - ActionPlayer class for replaying recorded actions
+
+**Key patterns:**
+- Element selectors use multiple strategies: ID > data attributes > CSS path > text content
+- ActionRecorder captures click, input, change, submit events
+- ActionPlayer waits for elements with configurable timeout (default 5s)
+- Max 3 actions per sequence (per design decision)
+- Pause/resume support for auth wall handling
+
+**Typecheck:** Passes for new files
