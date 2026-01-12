@@ -157,3 +157,18 @@ Started: 2026-01-11
 - Shows "Queued for manual review" if update was queued
 - Click to retry triggers status update again
 - Dismiss button for manual handling
+
+## Task 16: Enhanced Consent Modal ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/components/ConsentModal.tsx - Shared consent modal component
+
+**Changes:**
+- practice-panther.tsx - Updated modal with app name, clearer messaging
+
+**Key patterns:**
+- Modal shows app name: "This will also update the invoice status in Practice Panther"
+- Title changed to "Confirm Payment & Update Status"
+- Button changed to "Confirm & Update"
+- Added visual explanation of what will happen

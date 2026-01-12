@@ -160,11 +160,18 @@ let currentConfig: ExtensionConfig = defaultConfig
 interface ConsentModalProps {
   invoiceId: string
   amount: number
+  appName?: string
   onConfirm: () => void
   onCancel: () => void
 }
 
-const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfirm, onCancel }) => {
+const ConsentModal: React.FC<ConsentModalProps> = ({ 
+  invoiceId, 
+  amount, 
+  appName = 'Practice Panther',
+  onConfirm, 
+  onCancel 
+}) => {
   return (
     <div style={{
       position: "fixed",
@@ -183,7 +190,7 @@ const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfir
         padding: "24px",
         borderRadius: "8px",
         boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        maxWidth: "400px",
+        maxWidth: "420px",
         width: "90%"
       }}>
         <h3 style={{
@@ -192,14 +199,24 @@ const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfir
           fontWeight: "600",
           color: "#333"
         }}>
-          Confirm Payment
+          Confirm Payment & Update Status
         </h3>
         <p style={{
-          margin: "0 0 24px 0",
+          margin: "0 0 12px 0",
           fontSize: "14px",
           color: "#666"
         }}>
-          Mark invoice #{invoiceId} as paid for ${amount.toFixed(2)}?
+          Mark invoice <strong>#{invoiceId}</strong> as paid for <strong>${amount.toFixed(2)}</strong>?
+        </p>
+        <p style={{
+          margin: "0 0 20px 0",
+          fontSize: "13px",
+          color: "#888",
+          backgroundColor: "#f5f5f5",
+          padding: "8px 12px",
+          borderRadius: "4px"
+        }}>
+          This will also update the invoice status in <strong>{appName}</strong>.
         </p>
         <div style={{
           display: "flex",
@@ -229,10 +246,11 @@ const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfir
               borderRadius: "4px",
               backgroundColor: "#4CAF50",
               color: "white",
-              cursor: "pointer"
+              cursor: "pointer",
+              fontWeight: "600"
             }}
           >
-            Confirm
+            Confirm & Update
           </button>
         </div>
       </div>
