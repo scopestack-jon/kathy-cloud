@@ -111,3 +111,18 @@ Started: 2026-01-11
 - Status values: 'pending', 'retrying', 'resolved', 'failed'
 - RLS policies for organization isolation
 - Added actionSequence JSONB column to ApplicationConfig
+
+## Task 12: Pending Status Updates API ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- kathy-cloud/app/api/status-updates/pending/route.ts - GET list, POST create
+- kathy-cloud/app/api/status-updates/[id]/retry/route.ts - POST retry
+- kathy-cloud/app/api/status-updates/[id]/resolve/route.ts - POST resolve
+
+**Key patterns:**
+- All endpoints require Bearer token auth
+- Scoped to user's organization via RLS
+- GET returns pending/retrying updates with related payment/app info
+- POST retry increments retryCount and sets status to 'retrying'
+- POST resolve sets status to 'resolved'
