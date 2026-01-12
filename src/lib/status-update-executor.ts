@@ -1,0 +1,142 @@
+import { ActionPlayer } from './action-player'
+import type { RecordedAction, ActionSequence, PlaybackResult } from './types/actions'
+
+export interface StatusUpdateCallbacks {
+  onProgress: (step: number, total: number) => void
+  onSuccess: () => void
+  onError: (error: Error) => void
+  onAuthWall: (onRetry: () => void) => void
+}
+
+export interface StatusUpdateResult {
+  success: boolean
+  error?: Error
+  completedSteps: number
+  totalSteps: number
+}
+
+async function getActionSequence(applicationConfigId: string): Promise<ActionSequence | null> {
+  try {
+    const result = await chrome.storage.local.get(['actionSequences'])
+    const sequences = (result.actionSequences || {}) as Record<string, ActionSequence>
+    return sequences[applicationConfigId] || null
+  } catch (error) {
+    console.error('StatusUpdateExecutor: Failed to get action sequence', error)
+    return null
+  }
+}
+
+async function getActionSequenceForUrl(url: string): Promise<ActionSequence | null> {
+  try {
+    const result = await chrome.storage.local.get(['actionSequences'])
+    const sequences = (result.actionSequences || {}) as Record<string, ActionSequence>
+
+    for (const sequence of Object.values(sequences)) {
+      if (sequence.urlPattern) {
+        const regex = new RegExp(sequence.urlPattern)
+        if (regex.test(url)) {
+          return sequence
+        }
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('StatusUpdateExecutor: Failed to get action sequence for URL', error)
+    return null
+  }
+}
+
+export async function executeStatusUpdate(
+  invoiceRow: HTMLTableRowElement,
+  callbacks: StatusUpdateCallbacks
+): Promise<StatusUpdateResult> {
+  const sequence = await getActionSequenceForUrl(window.location.href)
+
+  if (!sequence || sequence.actions.length === 0) {
+    const error = new Error('No action sequence configured for this application')
+    callbacks.onError(error)
+    return {
+      success: false,
+      error,
+      completedSteps: 0,
+      totalSteps: 0
+    }
+  }
+
+  const actions = contextualizeActions(sequence.actions, invoiceRow)
+
+  const player = new ActionPlayer({
+    delayBetweenActions: 500,
+    elementWaitTimeout: 5000,
+    onProgress: (step, total) => {
+      callbacks.onProgress(step, total)
+    },
+    onAuthWallDetected: (onRetry) => {
+      callbacks.onAuthWall(onRetry)
+    }
+  })
+
+  const result = await player.play(actions)
+
+  if (result.success) {
+    callbacks.onSuccess()
+  } else if (result.error) {
+    callbacks.onError(result.error)
+  }
+
+  return {
+    success: result.success,
+    error: result.error,
+    completedSteps: result.completedSteps,
+    totalSteps: result.totalSteps
+  }
+}
+
+function contextualizeActions(
+  actions: RecordedAction[],
+  invoiceRow: HTMLTableRowElement
+): RecordedAction[] {
+  return actions.map(action => {
+    const contextualizedAction = { ...action }
+
+    if (action.selector.cssPath.includes(':nth-of-type')) {
+      const rowIndex = Array.from(invoiceRow.parentElement?.children || []).indexOf(invoiceRow) + 1
+      contextualizedAction.selector = {
+        ...action.selector,
+        cssPath: action.selector.cssPath.replace(
+          /tr:nth-of-type\(\d+\)/,
+          `tr:nth-of-type(${rowIndex})`
+        )
+      }
+    }
+
+    return contextualizedAction
+  })
+}
+
+export async function saveActionSequence(
+  applicationConfigId: string,
+  sequence: ActionSequence
+): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get(['actionSequences'])
+    const sequences = (result.actionSequences || {}) as Record<string, ActionSequence>
+    sequences[applicationConfigId] = sequence
+    await chrome.storage.local.set({ actionSequences: sequences })
+    console.log('StatusUpdateExecutor: Saved action sequence', applicationConfigId)
+  } catch (error) {
+    console.error('StatusUpdateExecutor: Failed to save action sequence', error)
+    throw error
+  }
+}
+
+export async function hasActionSequence(applicationConfigId: string): Promise<boolean> {
+  const sequence = await getActionSequence(applicationConfigId)
+  return sequence !== null && sequence.actions.length > 0
+}
+
+export async function hasActionSequenceForUrl(url: string): Promise<boolean> {
+  const sequence = await getActionSequenceForUrl(url)
+  return sequence !== null && sequence.actions.length > 0
+}

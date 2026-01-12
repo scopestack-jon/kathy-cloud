@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client"
 import React from "react"
 import "./configurator" // Import configurator to register message listeners
 import { panelManager, PanelEntity } from "../components/PanelManager"
+import { executeStatusUpdate, hasActionSequenceForUrl } from "../lib/status-update-executor"
+import { StatusUpdateProgress } from "../components/StatusUpdateProgress"
 
 // Plasmo content script configuration
 export const config = {
@@ -274,6 +276,82 @@ class ModalManager {
 }
 
 const modalManager = new ModalManager()
+
+// Status Update Progress Manager
+class StatusProgressManager {
+  private container: HTMLDivElement | null = null
+  private root: any = null
+  private state = {
+    isVisible: false,
+    currentStep: 0,
+    totalSteps: 0,
+    status: 'in-progress' as 'in-progress' | 'success' | 'error' | 'paused',
+    message: '',
+    onRetry: undefined as (() => void) | undefined
+  }
+
+  show() {
+    if (!this.container) {
+      this.container = document.createElement("div")
+      this.container.id = "kathy-status-progress-root"
+      document.body.appendChild(this.container)
+      this.root = createRoot(this.container)
+    }
+    this.state.isVisible = true
+    this.state.status = 'in-progress'
+    this.render()
+  }
+
+  updateProgress(step: number, total: number) {
+    this.state.currentStep = step
+    this.state.totalSteps = total
+    this.render()
+  }
+
+  showSuccess() {
+    this.state.status = 'success'
+    this.state.message = 'Invoice status updated!'
+    this.render()
+    setTimeout(() => this.hide(), 3000)
+  }
+
+  showError(message: string, onRetry?: () => void) {
+    this.state.status = 'error'
+    this.state.message = message
+    this.state.onRetry = onRetry
+    this.render()
+  }
+
+  showPaused(onRetry: () => void) {
+    this.state.status = 'paused'
+    this.state.message = 'Session expired. Please log in and click Retry.'
+    this.state.onRetry = onRetry
+    this.render()
+  }
+
+  hide() {
+    this.state.isVisible = false
+    this.render()
+  }
+
+  private render() {
+    if (this.root) {
+      this.root.render(
+        <StatusUpdateProgress
+          isVisible={this.state.isVisible}
+          currentStep={this.state.currentStep}
+          totalSteps={this.state.totalSteps}
+          status={this.state.status}
+          message={this.state.message}
+          onRetry={this.state.onRetry}
+          onDismiss={() => this.hide()}
+        />
+      )
+    }
+  }
+}
+
+const statusProgressManager = new StatusProgressManager()
 
 // Parse balance from cell text using configured pattern
 function parseBalance(cellText: string): number | null {
@@ -894,8 +972,44 @@ document.addEventListener('kathy:start-payment', async (event: CustomEvent) => {
             try {
               // User confirmed - mark as paid
               await confirmPayment(paymentSessionId)
-              markInvoiceAsPaid(invoiceData!)
-              kathyLog("Payment confirmed and invoice marked as paid", { invoiceId })
+              kathyLog("Payment confirmed, executing status update", { invoiceId })
+              
+              // Check if we have an action sequence configured
+              const hasSequence = await hasActionSequenceForUrl(window.location.href)
+              
+              if (hasSequence && invoiceData?.row) {
+                // Execute automated status update
+                statusProgressManager.show()
+                
+                const result = await executeStatusUpdate(invoiceData.row, {
+                  onProgress: (step, total) => {
+                    statusProgressManager.updateProgress(step, total)
+                  },
+                  onSuccess: () => {
+                    statusProgressManager.showSuccess()
+                    kathyLog("Status update completed successfully", { invoiceId })
+                  },
+                  onError: (error) => {
+                    statusProgressManager.showError(error.message, () => {
+                      // Retry logic will be handled by retry-handler
+                      kathyLog("User requested retry", { invoiceId })
+                    })
+                    kathyLog("Status update failed", { invoiceId, error: error.message })
+                  },
+                  onAuthWall: (onRetry) => {
+                    statusProgressManager.showPaused(onRetry)
+                    kathyLog("Auth wall detected, paused for user intervention", { invoiceId })
+                  }
+                })
+                
+                if (result.success) {
+                  markInvoiceAsPaid(invoiceData)
+                }
+              } else {
+                // No action sequence - just mark visually
+                markInvoiceAsPaid(invoiceData!)
+                kathyLog("No action sequence configured, marked visually only", { invoiceId })
+              }
               
               // Update panel with confirmed status
               panelManager.update({

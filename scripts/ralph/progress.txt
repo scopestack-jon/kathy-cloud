@@ -53,3 +53,20 @@ Started: 2026-01-11
 - Detects OAuth redirects via URL patterns
 - Integrated into ActionPlayer - pauses on auth wall, calls onAuthWallDetected callback
 - Callback receives onRetry function user can call after re-authenticating
+
+## Task 6: Status Update Execution Engine ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/components/StatusUpdateProgress.tsx - Progress toast component
+- src/lib/status-update-executor.ts - Executes action sequences for status updates
+
+**Changes to existing files:**
+- src/contents/practice-panther.tsx - Added StatusProgressManager, integrated into confirmation flow
+
+**Key patterns:**
+- executeStatusUpdate() takes invoice row and callbacks
+- Contextualizes actions based on invoice row position
+- Shows progress toast during execution
+- Handles success, error, and auth wall states
+- Falls back to visual-only marking if no action sequence configured
