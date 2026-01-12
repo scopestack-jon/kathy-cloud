@@ -3,6 +3,9 @@ import React from "react"
 import "./configurator" // Import configurator to register message listeners
 import { panelManager, PanelEntity } from "../components/PanelManager"
 import { authenticatedFetch } from "../lib/auth-refresh"
+import { executeStatusUpdate, hasActionSequenceForUrl } from "../lib/status-update-executor"
+import { StatusUpdateProgress } from "../components/StatusUpdateProgress"
+import { FailureToast } from "../components/FailureToast"
 
 // Plasmo content script configuration
 export const config = {
@@ -141,11 +144,18 @@ let currentConfig: ExtensionConfig = defaultConfig
 interface ConsentModalProps {
   invoiceId: string
   amount: number
+  appName?: string
   onConfirm: () => void
   onCancel: () => void
 }
 
-const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfirm, onCancel }) => {
+const ConsentModal: React.FC<ConsentModalProps> = ({ 
+  invoiceId, 
+  amount, 
+  appName = 'Practice Panther',
+  onConfirm, 
+  onCancel 
+}) => {
   return (
     <div style={{
       position: "fixed",
@@ -164,7 +174,7 @@ const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfir
         padding: "24px",
         borderRadius: "8px",
         boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        maxWidth: "400px",
+        maxWidth: "420px",
         width: "90%"
       }}>
         <h3 style={{
@@ -173,14 +183,24 @@ const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfir
           fontWeight: "600",
           color: "#333"
         }}>
-          Confirm Payment
+          Confirm Payment & Update Status
         </h3>
         <p style={{
-          margin: "0 0 24px 0",
+          margin: "0 0 12px 0",
           fontSize: "14px",
           color: "#666"
         }}>
-          Mark invoice #{invoiceId} as paid for ${amount.toFixed(2)}?
+          Mark invoice <strong>#{invoiceId}</strong> as paid for <strong>${amount.toFixed(2)}</strong>?
+        </p>
+        <p style={{
+          margin: "0 0 20px 0",
+          fontSize: "13px",
+          color: "#888",
+          backgroundColor: "#f5f5f5",
+          padding: "8px 12px",
+          borderRadius: "4px"
+        }}>
+          This will also update the invoice status in <strong>{appName}</strong>.
         </p>
         <div style={{
           display: "flex",
@@ -210,10 +230,11 @@ const ConsentModal: React.FC<ConsentModalProps> = ({ invoiceId, amount, onConfir
               borderRadius: "4px",
               backgroundColor: "#4CAF50",
               color: "white",
-              cursor: "pointer"
+              cursor: "pointer",
+              fontWeight: "600"
             }}
           >
-            Confirm
+            Confirm & Update
           </button>
         </div>
       </div>
@@ -258,6 +279,135 @@ class ModalManager {
 }
 
 const modalManager = new ModalManager()
+
+// Status Update Progress Manager
+class StatusProgressManager {
+  private container: HTMLDivElement | null = null
+  private root: any = null
+  private state = {
+    isVisible: false,
+    currentStep: 0,
+    totalSteps: 0,
+    status: 'in-progress' as 'in-progress' | 'success' | 'error' | 'paused',
+    message: '',
+    onRetry: undefined as (() => void) | undefined
+  }
+
+  show() {
+    if (!this.container) {
+      this.container = document.createElement("div")
+      this.container.id = "kathy-status-progress-root"
+      document.body.appendChild(this.container)
+      this.root = createRoot(this.container)
+    }
+    this.state.isVisible = true
+    this.state.status = 'in-progress'
+    this.render()
+  }
+
+  updateProgress(step: number, total: number) {
+    this.state.currentStep = step
+    this.state.totalSteps = total
+    this.render()
+  }
+
+  showSuccess() {
+    this.state.status = 'success'
+    this.state.message = 'Invoice status updated!'
+    this.render()
+    setTimeout(() => this.hide(), 3000)
+  }
+
+  showError(message: string, onRetry?: () => void) {
+    this.state.status = 'error'
+    this.state.message = message
+    this.state.onRetry = onRetry
+    this.render()
+  }
+
+  showPaused(onRetry: () => void) {
+    this.state.status = 'paused'
+    this.state.message = 'Session expired. Please log in and click Retry.'
+    this.state.onRetry = onRetry
+    this.render()
+  }
+
+  hide() {
+    this.state.isVisible = false
+    this.render()
+  }
+
+  private render() {
+    if (this.root) {
+      this.root.render(
+        <StatusUpdateProgress
+          isVisible={this.state.isVisible}
+          currentStep={this.state.currentStep}
+          totalSteps={this.state.totalSteps}
+          status={this.state.status}
+          message={this.state.message}
+          onRetry={this.state.onRetry}
+          onDismiss={() => this.hide()}
+        />
+      )
+    }
+  }
+}
+
+const statusProgressManager = new StatusProgressManager()
+
+// Failure Toast Manager
+class FailureToastManager {
+  private container: HTMLDivElement | null = null
+  private root: any = null
+  private state = {
+    isVisible: false,
+    invoiceId: '',
+    message: '',
+    queued: false,
+    onRetry: undefined as (() => void) | undefined
+  }
+
+  show(invoiceId: string, message: string, queued: boolean, onRetry?: () => void) {
+    if (!this.container) {
+      this.container = document.createElement("div")
+      this.container.id = "kathy-failure-toast-root"
+      document.body.appendChild(this.container)
+      this.root = createRoot(this.container)
+    }
+    this.state = {
+      isVisible: true,
+      invoiceId,
+      message,
+      queued,
+      onRetry
+    }
+    this.render()
+  }
+
+  hide() {
+    this.state.isVisible = false
+    this.render()
+  }
+
+  private render() {
+    if (this.root) {
+      this.root.render(
+        <FailureToast
+          isVisible={this.state.isVisible}
+          invoiceId={this.state.invoiceId}
+          message={this.state.message}
+          queued={this.state.queued}
+          onRetry={this.state.onRetry}
+          onDismiss={() => this.hide()}
+          autoDismissMs={10000}
+        />
+      )
+    }
+  }
+}
+
+const failureToastManager = new FailureToastManager()
 
 // Parse balance from cell text using configured pattern
 function parseBalance(cellText: string): number | null {
@@ -904,8 +1054,60 @@ document.addEventListener('kathy:start-payment', async (event: CustomEvent) => {
             try {
               // User confirmed - mark as paid
               await confirmPayment(paymentSessionId)
-              markInvoiceAsPaid(invoiceData!)
-              kathyLog("Payment confirmed and invoice marked as paid", { invoiceId })
+              kathyLog("Payment confirmed, executing status update", { invoiceId })
+              
+              // Check if we have an action sequence configured
+              const hasSequence = await hasActionSequenceForUrl(window.location.href)
+              
+              if (hasSequence && invoiceData?.row) {
+                // Execute automated status update
+                statusProgressManager.show()
+                
+                const result = await executeStatusUpdate(invoiceData.row, {
+                  onProgress: (step, total) => {
+                    statusProgressManager.updateProgress(step, total)
+                  },
+                  onSuccess: () => {
+                    statusProgressManager.showSuccess()
+                    kathyLog("Status update completed successfully", { invoiceId })
+                  },
+                  onError: (error, queued) => {
+                    statusProgressManager.hide()
+                    failureToastManager.show(
+                      invoiceId,
+                      error.message,
+                      queued || false,
+                      () => {
+                        kathyLog("User requested retry from toast", { invoiceId })
+                        failureToastManager.hide()
+                        // Re-trigger status update
+                        if (invoiceData?.row) {
+                          statusProgressManager.show()
+                          executeStatusUpdate(invoiceData.row, {
+                            onProgress: (s, t) => statusProgressManager.updateProgress(s, t),
+                            onSuccess: () => statusProgressManager.showSuccess(),
+                            onError: (e) => statusProgressManager.showError(e.message),
+                            onAuthWall: (r) => statusProgressManager.showPaused(r)
+                          })
+                        }
+                      }
+                    )
+                    kathyLog("Status update failed", { invoiceId, error: error.message, queued })
+                  },
+                  onAuthWall: (onRetry) => {
+                    statusProgressManager.showPaused(onRetry)
+                    kathyLog("Auth wall detected, paused for user intervention", { invoiceId })
+                  }
+                })
+                
+                if (result.success) {
+                  markInvoiceAsPaid(invoiceData)
+                }
+              } else {
+                // No action sequence - just mark visually
+                markInvoiceAsPaid(invoiceData!)
+                kathyLog("No action sequence configured, marked visually only", { invoiceId })
+              }
               
               // Update panel with confirmed status
               panelManager.update({
