@@ -40,3 +40,16 @@ Started: 2026-01-11
 - Navigation detected via URL comparison (polling every 100ms)
 - Page ready = document.readyState === 'complete' + 500ms buffer
 - Configurable expected URL pattern via regex
+
+## Task 5: Auth Wall Detection ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/lib/auth-wall-detector.ts - AuthWallDetector class
+
+**Key patterns:**
+- Detects login forms via common selectors (input[type="password"], form[action*="login"])
+- Detects session expired modals via text patterns
+- Detects OAuth redirects via URL patterns
+- Integrated into ActionPlayer - pauses on auth wall, calls onAuthWallDetected callback
+- Callback receives onRetry function user can call after re-authenticating

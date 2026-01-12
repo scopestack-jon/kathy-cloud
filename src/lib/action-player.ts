@@ -4,6 +4,7 @@ import type {
   PlaybackResult,
   ElementSelector
 } from './types/actions'
+import { AuthWallDetector } from './auth-wall-detector'
 
 const DEFAULT_OPTIONS: ActionPlayerOptions = {
   delayBetweenActions: 500,
@@ -187,9 +188,39 @@ export class ActionPlayer {
   private isPlaying = false
   private isPaused = false
   private currentStep = 0
+  private authWallDetector: AuthWallDetector
+  private pendingActions: RecordedAction[] = []
+  private retryResolve: (() => void) | null = null
 
   constructor(options: Partial<ActionPlayerOptions> = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options }
+    this.authWallDetector = new AuthWallDetector({
+      onAuthWallDetected: () => this.handleAuthWall()
+    })
+  }
+
+  private handleAuthWall(): void {
+    if (!this.isPlaying || this.isPaused) return
+
+    console.log('ActionPlayer: Auth wall detected, pausing playback')
+    this.pause()
+
+    if (this.options.onAuthWallDetected) {
+      this.options.onAuthWallDetected(() => {
+        console.log('ActionPlayer: User clicked retry, resuming')
+        this.resume()
+        if (this.retryResolve) {
+          this.retryResolve()
+          this.retryResolve = null
+        }
+      })
+    }
+  }
+
+  private waitForRetry(): Promise<void> {
+    return new Promise((resolve) => {
+      this.retryResolve = resolve
+    })
   }
 
   async play(actions: RecordedAction[]): Promise<PlaybackResult> {
@@ -205,6 +236,9 @@ export class ActionPlayer {
     this.isPlaying = true
     this.isPaused = false
     this.currentStep = 0
+    this.pendingActions = actions
+
+    this.authWallDetector.startMonitoring()
 
     const totalSteps = actions.length
 
@@ -253,6 +287,7 @@ export class ActionPlayer {
       }
 
       this.isPlaying = false
+      this.authWallDetector.stopMonitoring()
       this.options.onComplete?.()
 
       return {
@@ -262,6 +297,7 @@ export class ActionPlayer {
       }
     } catch (error) {
       this.isPlaying = false
+      this.authWallDetector.stopMonitoring()
       const err = error instanceof Error ? error : new Error(String(error))
       return {
         success: false,
@@ -275,6 +311,7 @@ export class ActionPlayer {
   stop(): void {
     this.isPlaying = false
     this.isPaused = false
+    this.authWallDetector.stopMonitoring()
   }
 
   pause(): void {

@@ -35,6 +35,7 @@ export interface ActionPlayerOptions {
   onProgress?: (step: number, total: number, action: RecordedAction) => void
   onError?: (error: Error, action: RecordedAction, step: number) => void
   onComplete?: () => void
+  onAuthWallDetected?: (onRetry: () => void) => void
 }
 
 export interface ActionRecorderOptions {
