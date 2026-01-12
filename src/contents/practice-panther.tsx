@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client"
 import React from "react"
 import "./configurator" // Import configurator to register message listeners
 import { panelManager, PanelEntity } from "../components/PanelManager"
+import { authenticatedFetch } from "../lib/auth-refresh"
 
 // Plasmo content script configuration
 export const config = {
@@ -25,24 +26,18 @@ function kathyLog(message: string, extra?: any) {
 // API helper functions
 async function createPaymentSession(invoiceData: InvoiceData) {
   try {
-    // Get auth token from chrome.storage
-    const { authToken } = await chrome.storage.local.get(['authToken'])
-    
-    if (!authToken) {
-      throw new Error('Not authenticated. Please sign in to the Kathy extension.')
-    }
-    
-    const response = await fetch(`${KATHY_CLOUD_URL}/api/payments`, {
+    const response = await authenticatedFetch(`${KATHY_CLOUD_URL}/api/payments`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         invoiceId: invoiceData.invoiceId,
         amount: invoiceData.amount,
         currency: 'USD',
         practicePantherInvoiceUrl: window.location.href,
+        applicationName: 'Practice Panther',
+        sourceUrl: window.location.href,
         organizationName: await getAuthenticatedOrganization()
       })
     })
@@ -60,18 +55,7 @@ async function createPaymentSession(invoiceData: InvoiceData) {
 
 async function checkPaymentStatus(paymentSessionId: string) {
   try {
-    // Get auth token from chrome.storage
-    const { authToken } = await chrome.storage.local.get(['authToken'])
-    
-    if (!authToken) {
-      throw new Error('Not authenticated. Please sign in to the Kathy extension.')
-    }
-    
-    const response = await fetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/status`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      }
-    })
+    const response = await authenticatedFetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/status`)
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`)
@@ -86,10 +70,10 @@ async function checkPaymentStatus(paymentSessionId: string) {
 
 async function confirmPayment(paymentSessionId: string) {
   try {
-    const response = await fetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/confirm`, {
+    const response = await authenticatedFetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/confirm`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${API_SECRET_KEY}`
+        'Content-Type': 'application/json'
       }
     })
 
@@ -106,10 +90,10 @@ async function confirmPayment(paymentSessionId: string) {
 
 async function cancelPayment(paymentSessionId: string) {
   try {
-    const response = await fetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/cancel`, {
+    const response = await authenticatedFetch(`${KATHY_CLOUD_URL}/api/payments/${paymentSessionId}/cancel`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${API_SECRET_KEY}`
+        'Content-Type': 'application/json'
       }
     })
 
@@ -420,6 +404,9 @@ function createKathyBadge(invoiceData: InvoiceData): HTMLButtonElement {
     e.preventDefault()
     e.stopPropagation()
     
+    // Check if already paid and set appropriate status
+    const isPaid = await checkIfPaid(invoiceData.invoiceId)
+    
     // Get organization from authenticated user
     const organizationId = await getAuthenticatedOrganization()
     
@@ -430,7 +417,7 @@ function createKathyBadge(invoiceData: InvoiceData): HTMLButtonElement {
       data: {
         invoiceId: invoiceData.invoiceId,
         amount: invoiceData.amount,
-        status: "pending",
+        status: isPaid ? "confirmed" : "pending",
         lastUpdated: new Date().toISOString(),
         organizationName: organizationId
       }
@@ -445,18 +432,7 @@ function createKathyBadge(invoiceData: InvoiceData): HTMLButtonElement {
 // Check if invoice has been paid and confirmed
 async function checkIfPaid(invoiceId: string): Promise<boolean> {
   try {
-    // Get auth token from chrome.storage
-    const { authToken } = await chrome.storage.local.get(['authToken'])
-    
-    if (!authToken) {
-      return false // Not authenticated, can't check
-    }
-    
-    const response = await fetch(`${KATHY_CLOUD_URL}/api/entities/invoice/${invoiceId}`, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      }
-    })
+    const response = await authenticatedFetch(`${KATHY_CLOUD_URL}/api/entities/invoice/${invoiceId}`)
     
     if (response.ok) {
       const data = await response.json()
@@ -465,6 +441,7 @@ async function checkIfPaid(invoiceId: string): Promise<boolean> {
     }
   } catch (error) {
     // Silently fail - don't block UI
+    kathyLog('Error checking if paid (non-fatal)', error)
   }
   return false
 }
@@ -641,30 +618,55 @@ function createPayButton(invoiceData: InvoiceData): HTMLButtonElement {
 
 // Mark invoice as paid in UI
 function markInvoiceAsPaid(invoiceData: InvoiceData) {
-  // Note: The "✓ Paid" pill badge is already shown via scanAndInject
-  // We just need to refresh the badge to show the paid state
-  // No need to add extra "PAID" text - the pill badge is enough!
-  
-  // Just add a subtle visual indicator to the row
+  // Update the badge to show "Paid" state
   const row = invoiceData.row
   if (row) {
+    // Add subtle background color
     row.style.backgroundColor = "#f1f8f4" // Very subtle green tint
+    
+    // Find and update the Kathy badge
+    const badge = row.querySelector<HTMLButtonElement>(`[data-invoice-id="${invoiceData.invoiceId}"]`)
+    if (badge) {
+      // Update badge to "Paid" state
+      badge.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 10px;
+        margin-right: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: white;
+        background: linear-gradient(135deg, #2E7D32 0%, #1B5E20 100%);
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        vertical-align: middle;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: all 0.2s;
+        white-space: nowrap;
+      `
+      badge.textContent = "✓ Paid"
+      badge.title = "Collected with Kathy - Click for details"
+      
+      kathyLog("Badge updated to Paid state", { invoiceId: invoiceData.invoiceId })
+    }
   }
 }
 
 // Get organization from authenticated user's Kathy account
 async function getAuthenticatedOrganization(): Promise<string | undefined> {
   try {
-    // Get user's organization from chrome storage (set during authentication)
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['kathyUser'], (result) => {
-        if (result.kathyUser?.organizationId) {
-          resolve(result.kathyUser.organizationId)
-        } else {
-          resolve(undefined)
-        }
-      })
-    })
+    // Fetch the user's organization from the API
+    const response = await authenticatedFetch(`${KATHY_CLOUD_URL}/api/auth/me`)
+    
+    if (!response.ok) {
+      kathyLog('Failed to fetch user organization', response.status)
+      return undefined
+    }
+    
+    const data = await response.json()
+    return data.organization?.id
   } catch (error) {
     kathyLog("Could not get authenticated organization", error)
     return undefined
@@ -818,6 +820,14 @@ document.addEventListener('kathy:start-payment', async (event: CustomEvent) => {
   const { invoiceId, amount } = event.detail
   kathyLog("Payment triggered from panel", { invoiceId, amount })
   
+  // Check if invoice is already paid
+  const isPaid = await checkIfPaid(invoiceId)
+  if (isPaid) {
+    kathyLog("Invoice already paid, blocking duplicate payment", { invoiceId })
+    alert("This invoice has already been paid with Kathy. No need to collect payment again.")
+    return
+  }
+  
   // Find the invoice data from the DOM
   const rows = document.querySelectorAll<HTMLTableRowElement>('tr[role="row"]')
   let invoiceData: InvoiceData | null = null
@@ -953,6 +963,19 @@ document.addEventListener('kathy:start-payment', async (event: CustomEvent) => {
 // Initialize
 async function init() {
   kathyLog("Extension loaded")
+  
+  // Check auth status on load
+  try {
+    const { authToken, user, organizationId } = await chrome.storage.local.get(['authToken', 'user', 'organizationId'])
+    kathyLog("Auth Status on Load", { 
+      hasToken: !!authToken, 
+      tokenLength: authToken?.length,
+      userEmail: user?.email,
+      orgId: organizationId 
+    })
+  } catch (error) {
+    kathyLog("Error checking auth on load", error)
+  }
   
   // Load configuration
   currentConfig = await loadConfig()

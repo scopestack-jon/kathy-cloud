@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
 export const config = {
-  matches: ["https://kathy-cloud.vercel.app/auth/callback*", "http://localhost:3000/auth/callback*"],
+  matches: [
+    "https://kathy-cloud.vercel.app/auth/callback*",
+    "https://kathy.dev/auth/callback*",
+    "https://www.kathy.dev/auth/callback*",
+    "http://localhost:3000/auth/callback*"
+  ],
   run_at: "document_end"
 }
 
@@ -21,32 +26,31 @@ async function captureAuthSession(attempts = 0) {
   try {
     console.log(`🔍 Kathy: Attempt ${attempts + 1}/${maxAttempts} to get session...`)
     
-    // First check sessionStorage for token from login page
-    const tempToken = sessionStorage.getItem('kathy_temp_token')
-    const tempUserStr = sessionStorage.getItem('kathy_temp_user')
+    // First check sessionStorage for session from login page
+    const tempSessionStr = sessionStorage.getItem('kathy_temp_session')
     
-    if (tempToken && tempUserStr) {
+    if (tempSessionStr) {
       console.log('✅ Kathy: Found temp session from login page!')
-      const tempUser = JSON.parse(tempUserStr)
+      const tempSession = JSON.parse(tempSessionStr)
       
-      // Store in chrome.storage
+      // Store in chrome.storage (including refresh_token for token refresh)
       await chrome.storage.local.set({
-        authToken: tempToken,
-        user: tempUser
+        authToken: tempSession.access_token,
+        refreshToken: tempSession.refresh_token,
+        user: tempSession.user
       })
       
-      console.log('✅ Kathy: Auth token stored successfully from sessionStorage!', tempUser.email)
+      console.log('✅ Kathy: Auth session stored successfully from sessionStorage!', tempSession.user.email)
       
       // Clear temp storage
-      sessionStorage.removeItem('kathy_temp_token')
-      sessionStorage.removeItem('kathy_temp_user')
+      sessionStorage.removeItem('kathy_temp_session')
       
       // Verify it was stored
-      const verify = await chrome.storage.local.get(['authToken', 'user'])
-      console.log('✅ Kathy: Verified storage:', verify.user?.email)
+      const verify = await chrome.storage.local.get(['authToken', 'refreshToken', 'user'])
+      console.log('✅ Kathy: Verified storage:', { email: verify.user?.email, hasRefreshToken: !!verify.refreshToken })
       
       // Show success message
-      showSuccessMessage(tempUser.email)
+      showSuccessMessage(tempSession.user.email)
       return
     }
     
@@ -58,17 +62,18 @@ async function captureAuthSession(attempts = 0) {
     if (session && !error) {
       console.log('✅ Kathy: Found auth session!', session.user.email)
       
-      // Store in chrome.storage so the extension can access it
+      // Store in chrome.storage so the extension can access it (including refresh_token)
       await chrome.storage.local.set({
         authToken: session.access_token,
+        refreshToken: session.refresh_token,
         user: session.user
       })
       
-      console.log('✅ Kathy: Auth token stored successfully in chrome.storage!')
+      console.log('✅ Kathy: Auth session stored successfully in chrome.storage!')
       
       // Verify it was stored
-      const verify = await chrome.storage.local.get(['authToken', 'user'])
-      console.log('✅ Kathy: Verified storage:', verify.user?.email)
+      const verify = await chrome.storage.local.get(['authToken', 'refreshToken', 'user'])
+      console.log('✅ Kathy: Verified storage:', { email: verify.user?.email, hasRefreshToken: !!verify.refreshToken })
       
       // Show success message
       showSuccessMessage(session.user.email)

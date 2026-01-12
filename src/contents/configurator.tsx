@@ -1,12 +1,15 @@
 import { createRoot } from "react-dom/client"
 import React, { useState } from "react"
+import { authenticatedFetch } from "../lib/auth-refresh"
 
 // Plasmo content script configuration
 export const config = {
   matches: ["<all_urls>"],
   exclude_matches: [
-    "https://kathy-cloud.vercel.app/auth/*",
-    "http://localhost:3000/auth/*"
+    "https://kathy-cloud.vercel.app/*",
+    "https://kathy.dev/*",
+    "https://www.kathy.dev/*",
+    "http://localhost:3000/*"
   ],
   run_at: "document_idle"
 }
@@ -272,16 +275,26 @@ class ConfiguratorManager {
       // Save to backend API
       try {
         const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
-        const response = await fetch(`${API_URL}/api/applications`, {
+        const response = await authenticatedFetch(`${API_URL}/api/applications`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(config)
         })
 
         if (response.ok) {
+          // Also save to local storage for immediate use
+          await chrome.storage.local.set({
+            kathyConfig: {
+              amountColumnIndex: config.selectorConfig.amountColumn,
+              amountPattern: config.selectorConfig.amountPattern,
+              invoiceIdColumnIndex: config.selectorConfig.invoiceIdColumn,
+              invoiceIdPattern: config.selectorConfig.invoiceIdPattern,
+              statusColumnIndex: config.selectorConfig.statusColumn
+            }
+          })
+          
           alert(`✅ ${applicationName} configured successfully!\n\n` +
                 `Invoice ID: Column ${config.selectorConfig.invoiceIdColumn}\n` +
                 `Amount: Column ${config.selectorConfig.amountColumn}\n` +
@@ -329,7 +342,7 @@ class ConfiguratorManager {
   }
 
   cancel() {
-    console.log("Kathy: Configuration cancelled")
+    console.log("Kathy: Cleaning up configurator UI")
     
     // Remove event listeners
     if (this.clickHandler) {

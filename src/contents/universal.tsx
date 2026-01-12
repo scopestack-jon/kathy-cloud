@@ -5,8 +5,10 @@ import type { PlasmoCSConfig } from 'plasmo'
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
   exclude_matches: [
-    "https://kathy-cloud.vercel.app/auth/*",
-    "http://localhost:3000/auth/*"
+    "https://kathy-cloud.vercel.app/*",
+    "https://kathy.dev/*",
+    "https://www.kathy.dev/*",
+    "http://localhost:3000/*"
   ],
   run_at: "document_idle",
   all_frames: false
@@ -75,12 +77,8 @@ class UniversalKathyInjector {
   private async loadConfiguration() {
     try {
       if (this.isAuthenticated) {
-        // Fetch from API
-        const response = await fetch(`${API_URL}/api/applications`, {
-          headers: { 
-            'Authorization': `Bearer ${this.authToken}` 
-          }
-        })
+        // Fetch from API with auto token refresh
+        const response = await authenticatedFetch(`${API_URL}/api/applications`)
 
         if (response.ok) {
           const { applications } = await response.json()

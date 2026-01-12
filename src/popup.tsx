@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { supabase } from '~lib/supabase'
+import { authenticatedFetch } from '~lib/auth-refresh'
 
 type TabView = 'home' | 'settings'
 
@@ -60,9 +61,7 @@ function PopupPage() {
         console.log('Kathy: Fetching latest user profile from API...')
         try {
           const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'https://kathy-cloud.vercel.app'
-          const response = await fetch(`${API_URL}/api/auth/me`, {
-            headers: { 'Authorization': `Bearer ${result.authToken}` }
-          })
+          const response = await authenticatedFetch(`${API_URL}/api/auth/me`)
             
             if (response.ok) {
               const data = await response.json()

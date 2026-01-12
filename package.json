@@ -26,7 +26,9 @@
   "manifest": {
     "host_permissions": [
       "http://localhost/*",
-      "https://kathy-cloud.vercel.app/*"
+      "https://kathy-cloud.vercel.app/*",
+      "https://kathy.dev/*",
+      "https://www.kathy.dev/*"
     ],
     "permissions": [
       "activeTab",

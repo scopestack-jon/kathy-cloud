@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react"
+import { authenticatedFetch } from "../lib/auth-refresh"
 
 // Panel types
 export type PanelTab = "overview" | "payments" | "notes"
@@ -28,13 +29,8 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
   useEffect(() => {
     const fetchEnrichedData = async () => {
       try {
-        const response = await fetch(
-          `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${API_SECRET_KEY}`
-            }
-          }
+        const response = await authenticatedFetch(
+          `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`
         )
         
         if (response.ok) {
@@ -125,7 +121,10 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
             Quick Actions
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {(summary?.latestStatus === 'confirmed' || summary?.latestStatus === 'paid_and_confirmed') ? (
+            {(summary?.latestStatus === 'confirmed' || 
+              summary?.latestStatus === 'paid_and_confirmed' || 
+              entity.data.status === 'confirmed' ||
+              entity.data.status === 'paid_and_confirmed') ? (
               <div style={{
                 padding: "12px 16px",
                 fontSize: "14px",
@@ -179,13 +178,8 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
               onClick={async () => {
                 // Refresh data without page reload
                 try {
-                  const response = await fetch(
-                    `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`,
-                    {
-                      headers: {
-                        'Authorization': `Bearer ${API_SECRET_KEY}`
-                      }
-                    }
+                  const response = await authenticatedFetch(
+                    `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`
                   )
                   
                   if (response.ok) {
@@ -235,11 +229,10 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
               onClick={async () => {
                 // Trigger action via API
                 try {
-                  await fetch(`${KATHY_CLOUD_URL}/api/actions`, {
+                  await authenticatedFetch(`${KATHY_CLOUD_URL}/api/actions`, {
                     method: 'POST',
                     headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${API_SECRET_KEY}`
+                      'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                       action: 'mark_as_reviewed',
@@ -290,13 +283,8 @@ const PaymentsTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
     // Fetch payment history
     const fetchPayments = async () => {
       try {
-        const response = await fetch(
-          `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${API_SECRET_KEY}`
-            }
-          }
+        const response = await authenticatedFetch(
+          `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`
         )
         
         if (response.ok) {
