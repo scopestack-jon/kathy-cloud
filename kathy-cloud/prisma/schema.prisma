@@ -1,0 +1,133 @@
+// Kathy Cloud - Prisma Schema
+// Multi-tenant, multi-application payment tracking
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentStatus {
+  initiated
+  pending
+  paid_pending_consent
+  paid_and_confirmed
+  cancelled
+  failed
+  manual_review
+}
+
+// Organizations (law firms, companies, etc.)
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  settings    Json?    @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  users               User[]
+  applicationConfigs  ApplicationConfig[]
+  paymentSessions     PaymentSession[]
+  
+  @@map("organizations")
+  @@index([slug])
+}
+
+// Users (synced with Supabase Auth)
+model User {
+  id             String   @id // Matches Supabase auth.users.id
+  organizationId String   @map("organization_id")
+  email          String   @unique
+  firstName      String?  @map("first_name")
+  lastName       String?  @map("last_name")
+  role           String   @default("member") // admin, member, viewer
+  metadata       Json?    @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentSessions PaymentSession[]
+  auditLogs       AuditLog[]
+  
+  @@map("users")
+  @@index([organizationId])
+  @@index([email])
+}
+
+// Application configurations (Practice Panther, Clio, etc.)
+model ApplicationConfig {
+  id              String   @id @default(uuid())
+  organizationId  String   @map("organization_id")
+  applicationName String   @map("application_name")
+  applicationUrl  String   @map("application_url")
+  urlPattern      String   @map("url_pattern")
+  isEnabled       Boolean  @default(true) @map("is_enabled")
+  selectorConfig  Json     @db.JsonB @map("selector_config")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentSessions PaymentSession[]
+  
+  @@map("application_configs")
+  @@unique([organizationId, applicationName])
+  @@index([organizationId, isEnabled])
+}
+
+// Payment sessions with multi-app tracking
+model PaymentSession {
+  id                       String        @id @default(uuid())
+  organizationId           String        @map("organization_id")
+  userId                   String?       @map("user_id")
+  applicationConfigId      String?       @map("application_config_id")
+  applicationName          String?       @map("application_name")
+  invoiceId                String        @map("invoice_id")
+  amount                   Decimal       @db.Decimal(10, 2)
+  currency                 String        @default("USD")
+  status                   PaymentStatus @default(initiated)
+  sourceUrl                String?       @map("source_url")
+  processorPaymentId       String?       @unique @map("processor_payment_id")
+  paymentUrl               String?       @map("payment_url")
+  
+  // Legacy fields (will be migrated)
+  practicePantherInvoiceUrl String?      @map("practice_panther_invoice_url")
+  firmId                   String?       @map("firm_id")
+  
+  createdAt                DateTime      @default(now()) @map("created_at")
+  updatedAt                DateTime      @updatedAt @map("updated_at")
+  
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  applicationConfig ApplicationConfig? @relation(fields: [applicationConfigId], references: [id], onDelete: SetNull)
+  auditLogs         AuditLog[]
+
+  @@map("payment_sessions")
+  @@index([organizationId])
+  @@index([organizationId, applicationName])
+  @@index([invoiceId])
+  @@index([status])
+  @@index([userId])
+}
+
+// Audit logs for compliance
+model AuditLog {
+  id               String         @id @default(uuid())
+  paymentSessionId String         @map("payment_session_id")
+  userId           String?        @map("user_id")
+  action           String
+  actor            String?
+  timestamp        DateTime       @default(now())
+  metadata         Json?          @db.JsonB
+  
+  paymentSession   PaymentSession @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
+  user             User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+  @@index([paymentSessionId])
+  @@index([userId])
+  @@index([action])
+}
