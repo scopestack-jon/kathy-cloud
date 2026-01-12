@@ -4,6 +4,7 @@ import "./configurator" // Import configurator to register message listeners
 import { panelManager, PanelEntity } from "../components/PanelManager"
 import { executeStatusUpdate, hasActionSequenceForUrl } from "../lib/status-update-executor"
 import { StatusUpdateProgress } from "../components/StatusUpdateProgress"
+import { FailureToast } from "../components/FailureToast"
 
 // Plasmo content script configuration
 export const config = {
@@ -352,6 +353,59 @@ class StatusProgressManager {
 }
 
 const statusProgressManager = new StatusProgressManager()
+
+// Failure Toast Manager
+class FailureToastManager {
+  private container: HTMLDivElement | null = null
+  private root: any = null
+  private state = {
+    isVisible: false,
+    invoiceId: '',
+    message: '',
+    queued: false,
+    onRetry: undefined as (() => void) | undefined
+  }
+
+  show(invoiceId: string, message: string, queued: boolean, onRetry?: () => void) {
+    if (!this.container) {
+      this.container = document.createElement("div")
+      this.container.id = "kathy-failure-toast-root"
+      document.body.appendChild(this.container)
+      this.root = createRoot(this.container)
+    }
+    this.state = {
+      isVisible: true,
+      invoiceId,
+      message,
+      queued,
+      onRetry
+    }
+    this.render()
+  }
+
+  hide() {
+    this.state.isVisible = false
+    this.render()
+  }
+
+  private render() {
+    if (this.root) {
+      this.root.render(
+        <FailureToast
+          isVisible={this.state.isVisible}
+          invoiceId={this.state.invoiceId}
+          message={this.state.message}
+          queued={this.state.queued}
+          onRetry={this.state.onRetry}
+          onDismiss={() => this.hide()}
+          autoDismissMs={10000}
+        />
+      )
+    }
+  }
+}
+
+const failureToastManager = new FailureToastManager()
 
 // Parse balance from cell text using configured pattern
 function parseBalance(cellText: string): number | null {
@@ -989,12 +1043,28 @@ document.addEventListener('kathy:start-payment', async (event: CustomEvent) => {
                     statusProgressManager.showSuccess()
                     kathyLog("Status update completed successfully", { invoiceId })
                   },
-                  onError: (error) => {
-                    statusProgressManager.showError(error.message, () => {
-                      // Retry logic will be handled by retry-handler
-                      kathyLog("User requested retry", { invoiceId })
-                    })
-                    kathyLog("Status update failed", { invoiceId, error: error.message })
+                  onError: (error, queued) => {
+                    statusProgressManager.hide()
+                    failureToastManager.show(
+                      invoiceId,
+                      error.message,
+                      queued || false,
+                      () => {
+                        kathyLog("User requested retry from toast", { invoiceId })
+                        failureToastManager.hide()
+                        // Re-trigger status update
+                        if (invoiceData?.row) {
+                          statusProgressManager.show()
+                          executeStatusUpdate(invoiceData.row, {
+                            onProgress: (s, t) => statusProgressManager.updateProgress(s, t),
+                            onSuccess: () => statusProgressManager.showSuccess(),
+                            onError: (e) => statusProgressManager.showError(e.message),
+                            onAuthWall: (r) => statusProgressManager.showPaused(r)
+                          })
+                        }
+                      }
+                    )
+                    kathyLog("Status update failed", { invoiceId, error: error.message, queued })
                   },
                   onAuthWall: (onRetry) => {
                     statusProgressManager.showPaused(onRetry)

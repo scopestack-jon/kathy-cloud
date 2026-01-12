@@ -141,3 +141,19 @@ Started: 2026-01-11
 - Local storage sync when connectivity restored
 - Track pending updates in chrome.storage for UI
 - Pass context with paymentSessionId/applicationConfigId to executor
+
+## Task 14: User Alert on Failure ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/components/FailureToast.tsx - Toast notification for failures
+
+**Changes:**
+- practice-panther.tsx - Added FailureToastManager, integrated with status update flow
+
+**Key patterns:**
+- FailureToast shows on status update failure
+- Auto-dismiss after 10 seconds with countdown
+- Shows "Queued for manual review" if update was queued
+- Click to retry triggers status update again
+- Dismiss button for manual handling
