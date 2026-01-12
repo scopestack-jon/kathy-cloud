@@ -187,3 +187,18 @@ Started: 2026-01-11
 - Resolve button removes item from list
 - Empty state shows "No Pending Updates"
 - Refresh button to reload data
+
+## Task 9: Action Sequence Storage API ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- kathy-cloud/app/api/applications/[id]/actions/route.ts
+
+**Endpoints:**
+- GET /api/applications/:id/actions - Retrieve action sequence
+- POST /api/applications/:id/actions - Save action sequence
+
+**Key patterns:**
+- Validates action sequence schema before saving
+- Scoped to user's organization via RLS
+- Stores in ApplicationConfig.actionSequence JSONB column
