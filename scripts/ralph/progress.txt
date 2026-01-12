@@ -172,3 +172,18 @@ Started: 2026-01-11
 - Title changed to "Confirm Payment & Update Status"
 - Button changed to "Confirm & Update"
 - Added visual explanation of what will happen
+
+## Task 15: Dashboard Pending Updates UI ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- kathy-cloud/components/PendingUpdateCard.tsx - Card component for pending updates
+- kathy-cloud/app/dashboard/pending-updates/page.tsx - Pending updates page
+
+**Key patterns:**
+- Page lists all pending/retrying status updates
+- Each card shows invoice ID, app name, amount, error message
+- Retry button triggers POST /api/status-updates/:id/retry
+- Resolve button removes item from list
+- Empty state shows "No Pending Updates"
+- Refresh button to reload data
