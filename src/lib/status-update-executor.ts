@@ -1,5 +1,6 @@
 import { ActionPlayer } from './action-player'
 import type { RecordedAction, ActionSequence, PlaybackResult } from './types/actions'
+import { getPrebuiltActionSequence, hasPrebuiltConnector } from './connectors'
 
 export interface StatusUpdateCallbacks {
   onProgress: (step: number, total: number) => void
@@ -28,6 +29,7 @@ async function getActionSequence(applicationConfigId: string): Promise<ActionSeq
 
 async function getActionSequenceForUrl(url: string): Promise<ActionSequence | null> {
   try {
+    // First check for user-configured sequences
     const result = await chrome.storage.local.get(['actionSequences'])
     const sequences = (result.actionSequences || {}) as Record<string, ActionSequence>
 
@@ -35,9 +37,17 @@ async function getActionSequenceForUrl(url: string): Promise<ActionSequence | nu
       if (sequence.urlPattern) {
         const regex = new RegExp(sequence.urlPattern)
         if (regex.test(url)) {
+          console.log('StatusUpdateExecutor: Using user-configured sequence')
           return sequence
         }
       }
+    }
+
+    // Fall back to pre-built connector
+    const prebuilt = getPrebuiltActionSequence(url)
+    if (prebuilt) {
+      console.log('StatusUpdateExecutor: Using pre-built connector')
+      return prebuilt
     }
 
     return null
@@ -137,6 +147,12 @@ export async function hasActionSequence(applicationConfigId: string): Promise<bo
 }
 
 export async function hasActionSequenceForUrl(url: string): Promise<boolean> {
+  // Check pre-built connectors first (synchronous)
+  if (hasPrebuiltConnector(url)) {
+    return true
+  }
+  
+  // Then check user-configured sequences
   const sequence = await getActionSequenceForUrl(url)
   return sequence !== null && sequence.actions.length > 0
 }

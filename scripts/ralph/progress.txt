@@ -70,3 +70,16 @@ Started: 2026-01-11
 - Shows progress toast during execution
 - Handles success, error, and auth wall states
 - Falls back to visual-only marking if no action sequence configured
+
+## Task 7: Practice Panther Pre-built Connector ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/lib/connectors/index.ts - Connector registry
+- src/lib/connectors/practice-panther.ts - Practice Panther connector
+
+**Key patterns:**
+- Connectors have urlPattern, name, and getActionSequence()
+- Registry checks all connectors against current URL
+- Status update executor checks user-configured sequences first, then pre-built
+- Practice Panther connector clicks status dropdown then selects "Paid"
