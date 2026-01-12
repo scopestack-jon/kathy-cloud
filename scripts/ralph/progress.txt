@@ -98,3 +98,16 @@ Started: 2026-01-11
 - Exponential backoff: 1s, 2s, 4s (base * 2^attempt)
 - Callbacks for onRetry and onExhausted
 - RetryableAction class for stateful retry tracking
+
+## Task 11: Pending Status Updates Table ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- kathy-cloud/prisma/schema.prisma - Full Prisma schema with PendingStatusUpdate model
+- kathy-cloud/prisma/migrations/20260111_add_pending_status_updates/migration.sql
+
+**Key patterns:**
+- PendingStatusUpdate has: organizationId, paymentSessionId, applicationConfigId, invoiceId, errorMessage, retryCount, status
+- Status values: 'pending', 'retrying', 'resolved', 'failed'
+- RLS policies for organization isolation
+- Added actionSequence JSONB column to ApplicationConfig
