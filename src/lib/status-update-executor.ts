@@ -2,12 +2,19 @@ import { ActionPlayer } from './action-player'
 import type { RecordedAction, ActionSequence, PlaybackResult } from './types/actions'
 import { getPrebuiltActionSequence, hasPrebuiltConnector } from './connectors'
 import { withRetry } from './retry-handler'
+import { queueFailedUpdate } from './status-update-queue'
 
 export interface StatusUpdateCallbacks {
   onProgress: (step: number, total: number) => void
   onSuccess: () => void
-  onError: (error: Error) => void
+  onError: (error: Error, queued?: boolean) => void
   onAuthWall: (onRetry: () => void) => void
+}
+
+export interface StatusUpdateContext {
+  paymentSessionId?: string
+  applicationConfigId?: string
+  invoiceId: string
 }
 
 export interface StatusUpdateResult {
@@ -60,7 +67,8 @@ async function getActionSequenceForUrl(url: string): Promise<ActionSequence | nu
 
 export async function executeStatusUpdate(
   invoiceRow: HTMLTableRowElement,
-  callbacks: StatusUpdateCallbacks
+  callbacks: StatusUpdateCallbacks,
+  context?: StatusUpdateContext
 ): Promise<StatusUpdateResult> {
   const sequence = await getActionSequenceForUrl(window.location.href)
 
@@ -121,7 +129,24 @@ export async function executeStatusUpdate(
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error))
-    callbacks.onError(err)
+
+    let queued = false
+    if (context?.paymentSessionId && context?.applicationConfigId) {
+      try {
+        await queueFailedUpdate({
+          paymentSessionId: context.paymentSessionId,
+          applicationConfigId: context.applicationConfigId,
+          invoiceId: context.invoiceId,
+          errorMessage: err.message
+        })
+        queued = true
+        console.log('StatusUpdateExecutor: Failed update queued for manual review')
+      } catch (queueError) {
+        console.error('StatusUpdateExecutor: Failed to queue update', queueError)
+      }
+    }
+
+    callbacks.onError(err, queued)
     return {
       success: false,
       error: err,

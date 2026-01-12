@@ -126,3 +126,18 @@ Started: 2026-01-11
 - GET returns pending/retrying updates with related payment/app info
 - POST retry increments retryCount and sets status to 'retrying'
 - POST resolve sets status to 'resolved'
+
+## Task 13: Queue Failed Updates ✅
+**Completed:** 2026-01-11
+
+**Files created:**
+- src/lib/status-update-queue.ts - Queue management for failed updates
+
+**Changes:**
+- status-update-executor.ts - Queues failed updates after retries exhausted
+
+**Key patterns:**
+- queueFailedUpdate() sends to API, falls back to local storage
+- Local storage sync when connectivity restored
+- Track pending updates in chrome.storage for UI
+- Pass context with paymentSessionId/applicationConfigId to executor
