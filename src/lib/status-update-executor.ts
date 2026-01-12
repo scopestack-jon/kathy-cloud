@@ -1,6 +1,7 @@
 import { ActionPlayer } from './action-player'
 import type { RecordedAction, ActionSequence, PlaybackResult } from './types/actions'
 import { getPrebuiltActionSequence, hasPrebuiltConnector } from './connectors'
+import { withRetry } from './retry-handler'
 
 export interface StatusUpdateCallbacks {
   onProgress: (step: number, total: number) => void
@@ -75,31 +76,58 @@ export async function executeStatusUpdate(
   }
 
   const actions = contextualizeActions(sequence.actions, invoiceRow)
+  let lastResult: PlaybackResult | null = null
 
-  const player = new ActionPlayer({
-    delayBetweenActions: 500,
-    elementWaitTimeout: 5000,
-    onProgress: (step, total) => {
-      callbacks.onProgress(step, total)
-    },
-    onAuthWallDetected: (onRetry) => {
-      callbacks.onAuthWall(onRetry)
-    }
-  })
+  try {
+    await withRetry(
+      async () => {
+        const player = new ActionPlayer({
+          delayBetweenActions: 500,
+          elementWaitTimeout: 5000,
+          onProgress: (step, total) => {
+            callbacks.onProgress(step, total)
+          },
+          onAuthWallDetected: (onRetry) => {
+            callbacks.onAuthWall(onRetry)
+          }
+        })
 
-  const result = await player.play(actions)
+        const result = await player.play(actions)
+        lastResult = result
 
-  if (result.success) {
+        if (!result.success) {
+          throw result.error || new Error('Action playback failed')
+        }
+
+        return result
+      },
+      {
+        maxRetries: 3,
+        baseDelayMs: 1000,
+        onRetry: (attempt, error, nextDelayMs) => {
+          console.log(`StatusUpdateExecutor: Retry ${attempt}, waiting ${nextDelayMs}ms`, error.message)
+        },
+        onExhausted: (error, totalAttempts) => {
+          console.log(`StatusUpdateExecutor: All ${totalAttempts} attempts failed`, error.message)
+        }
+      }
+    )
+
     callbacks.onSuccess()
-  } else if (result.error) {
-    callbacks.onError(result.error)
-  }
-
-  return {
-    success: result.success,
-    error: result.error,
-    completedSteps: result.completedSteps,
-    totalSteps: result.totalSteps
+    return {
+      success: true,
+      completedSteps: lastResult?.completedSteps || actions.length,
+      totalSteps: actions.length
+    }
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error))
+    callbacks.onError(err)
+    return {
+      success: false,
+      error: err,
+      completedSteps: lastResult?.completedSteps || 0,
+      totalSteps: actions.length
+    }
   }
 }
 
