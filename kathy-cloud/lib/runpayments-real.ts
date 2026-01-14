@@ -220,9 +220,15 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
 
   // Helper function to attempt HPP creation
   const attemptHppCreation = async (token: string): Promise<Response> => {
-    // Build hpp_options array - only for customer-facing prefill fields
-    // Hidden tracking fields will go in metadata instead
+    // Build hpp_options array for customer-facing fields
     const hppOptions: Array<{ name: string; value: string; is_readonly?: boolean; is_required?: boolean }> = []
+    
+    // Add clean invoice number for display
+    hppOptions.push({
+      name: 'invoice_id',
+      value: params.originalInvoiceId || params.invoiceId,
+      is_readonly: true
+    })
     
     // Add customer prefill data if provided
     if (params.customerName) {
@@ -261,11 +267,10 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
       lock_amount: true,
       disable_after_payment: true,
       name_on_account: params.customerName || '',
-      // Add tracking fields as custom fields (not displayed in UI)
+      // Add tracking fields as root-level custom fields (hidden from UI)
       custom_01: params.invoiceId, // Compound invoice ID for webhook matching
       custom_02: params.paymentSessionId, // Payment session ID
       custom_03: 'kathy', // Source identifier
-      invoice_id: params.originalInvoiceId || params.invoiceId, // Original invoice for reference
       hpp_options: hppOptions
     }
     
