@@ -148,9 +148,23 @@ async function handlePost(request: NextRequest) {
     return NextResponse.json(response, { status: 201, headers: corsHeaders })
 
   } catch (error) {
-    logger.error('Error creating payment session', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
+    logger.error('Error creating payment session', {
+      message: errorMessage,
+      stack: errorStack,
+      error
+    })
+    
+    // Expose detailed error in development/debug mode
+    const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true'
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        ...(isDev && { details: errorMessage, stack: errorStack })
+      },
       { status: 500, headers: corsHeaders }
     )
   }
