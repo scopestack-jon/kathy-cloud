@@ -5,7 +5,8 @@ import crypto from 'crypto'
 export interface CreatePaymentSessionParams {
   amount: number
   currency: string
-  invoiceId: string
+  invoiceId: string // Compound ID for tracking (orgId:invoiceId)
+  originalInvoiceId?: string // Original invoice ID for display
   paymentSessionId: string
   description?: string
   // Optional customer prefill data
@@ -222,23 +223,30 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     // Build hpp_options array for custom fields  
     const hppOptions: Array<{ name: string; value: string; is_readonly?: boolean; is_required?: boolean }> = []
     
-    // Add invoice ID as custom field (readonly but not required - per API constraint)
+    // Add original invoice ID for display (or compound if original not provided)
     hppOptions.push({
       name: 'invoice_id',
+      value: params.originalInvoiceId || params.invoiceId,
+      is_readonly: true
+    })
+    
+    // Add compound invoice ID for tracking and webhook matching
+    hppOptions.push({
+      name: 'custom_01',
       value: params.invoiceId,
       is_readonly: true
     })
     
     // Add payment session ID as custom field
     hppOptions.push({
-      name: 'custom_01',
+      name: 'custom_02',
       value: params.paymentSessionId,
       is_readonly: true
     })
     
     // Add source identifier
     hppOptions.push({
-      name: 'custom_02',
+      name: 'custom_03',
       value: 'kathy',
       is_readonly: true
     })
@@ -246,7 +254,7 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     // Add customer prefill data if provided
     if (params.customerName) {
       hppOptions.push({
-        name: 'custom_03',
+        name: 'custom_04',
         value: params.customerName
       })
     }

@@ -42,9 +42,13 @@ export async function POST(request: NextRequest) {
     })
 
     // Extract invoice number from RunPayments webhook
-    // RunPayments includes invoice_number in transaction_details
-    // Format may be compound: {organizationId}:{invoiceId}
-    const compoundInvoiceId = event.data?.transaction?.transaction_details?.invoice_number
+    // New format: custom_01 contains compound ID, invoice_number contains display ID
+    // Legacy format: invoice_number contains compound ID
+    const custom01 = event.data?.transaction?.transaction_details?.custom_01
+    const invoiceNumber = event.data?.transaction?.transaction_details?.invoice_number
+    
+    // Try custom_01 first (new format), fallback to invoice_number (legacy)
+    const compoundInvoiceId = custom01 || invoiceNumber
     
     // Parse compound invoice ID to extract organization and invoice
     let organizationId: string | null = null
@@ -55,7 +59,7 @@ export async function POST(request: NextRequest) {
       organizationId = parts[0]
       invoiceId = parts[1]
     } else if (compoundInvoiceId) {
-      // Legacy format (no organization prefix)
+      // No organization prefix (single tenant or original invoice ID)
       invoiceId = compoundInvoiceId
     }
     

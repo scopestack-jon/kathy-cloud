@@ -103,6 +103,7 @@ async function handlePost(request: NextRequest) {
       amount: body.amount,
       currency: body.currency || 'USD',
       invoiceId: compoundInvoiceId, // Use compound ID for multi-tenant isolation
+      originalInvoiceId: body.invoiceId, // Original invoice ID for display
       paymentSessionId: paymentSession.id,
       description: `Invoice ${body.invoiceId} - ${organization?.name || body.applicationName || 'Payment'}`
     })
