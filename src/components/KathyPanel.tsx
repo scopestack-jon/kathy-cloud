@@ -471,9 +471,37 @@ const CheckoutTab: React.FC<{
   
   const openInPopup = () => {
     console.log('Kathy Checkout: Opening in popup window')
+    
+    // Try to send message to background script
     chrome.runtime.sendMessage({
       type: 'openPaymentPopup',
       url: checkout.paymentUrl
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Kathy Checkout: Message error, using fallback', chrome.runtime.lastError)
+        // Fallback: Try direct window creation (may not work from content script)
+        try {
+          chrome.windows.create({
+            url: checkout.paymentUrl,
+            type: 'popup',
+            width: 600,
+            height: 800,
+            focused: true
+          }, (window) => {
+            if (window) {
+              console.log('Kathy Checkout: Popup opened directly', window.id)
+            } else {
+              console.error('Kathy Checkout: Failed to open popup, use new tab button')
+              alert('Could not open popup. Please use "Open in New Tab" button.')
+            }
+          })
+        } catch (error) {
+          console.error('Kathy Checkout: Direct window creation failed', error)
+          alert('Could not open popup. Please use "Open in New Tab" button.')
+        }
+      } else {
+        console.log('Kathy Checkout: Popup message sent successfully', response)
+      }
     })
   }
   

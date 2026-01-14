@@ -78,25 +78,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'openPaymentPopup') {
     // Open payment URL in a popup window (not a normal tab)
+    kathyLog('Received openPaymentPopup message')
     kathyLog('Opening payment in popup window:', message.url?.substring(0, 100) + '...')
     
-    chrome.windows.create({
-      url: message.url,
-      type: 'popup',
-      width: 600,
-      height: 800,
-      focused: true,
-      left: Math.round((screen.width - 600) / 2),
-      top: Math.round((screen.height - 800) / 2)
-    }, (window) => {
-      if (window) {
-        kathyLog('Payment popup opened', { windowId: window.id })
-        sendResponse({ success: true, windowId: window.id })
-      } else {
-        kathyLog('Failed to open payment popup')
-        sendResponse({ success: false, error: 'Failed to create window' })
-      }
-    })
+    try {
+      chrome.windows.create({
+        url: message.url,
+        type: 'popup',
+        width: 600,
+        height: 800,
+        focused: true,
+        left: Math.round((screen.width - 600) / 2),
+        top: Math.round((screen.height - 800) / 2)
+      }, (window) => {
+        if (chrome.runtime.lastError) {
+          kathyLog('Error creating popup window:', chrome.runtime.lastError)
+          sendResponse({ success: false, error: chrome.runtime.lastError.message })
+        } else if (window) {
+          kathyLog('Payment popup opened', { windowId: window.id })
+          sendResponse({ success: true, windowId: window.id })
+        } else {
+          kathyLog('Failed to open payment popup - no window returned')
+          sendResponse({ success: false, error: 'No window created' })
+        }
+      })
+    } catch (error) {
+      kathyLog('Exception opening popup:', error)
+      sendResponse({ success: false, error: String(error) })
+    }
     
     return true // Keep message channel open for async response
   }
