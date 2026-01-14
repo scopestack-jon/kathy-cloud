@@ -649,23 +649,25 @@ export const KathyPanel: React.FC<KathyPanelProps> = ({ isOpen, entity, onClose 
   const [checkout, setCheckout] = useState<CheckoutState | null>(null)
   
   useEffect(() => {
-    // Reset to overview tab when entity changes
-    setActiveTab("overview")
-    // Clear checkout when entity changes
-    setCheckout(null)
-  }, [entity])
+    // Reset to overview tab when entity changes (but only if not in checkout)
+    if (!checkout) {
+      setActiveTab("overview")
+    }
+    // Don't clear checkout when entity changes - let the checkout flow complete
+  }, [entity, checkout])
   
   // Listen for checkout:open event
   useEffect(() => {
     const handleCheckoutOpen = (event: any) => {
       const { paymentUrl, paymentSessionId, invoiceId, amount } = event.detail
-      console.log('Kathy Panel: Opening checkout', { paymentSessionId, invoiceId, amount })
+      console.log('Kathy Panel: Opening checkout', { paymentSessionId, invoiceId, amount, paymentUrl: paymentUrl.substring(0, 100) + '...' })
       setCheckout({
         paymentUrl,
         paymentSessionId,
         invoiceId,
         amount
       })
+      console.log('Kathy Panel: Checkout state set')
     }
     
     document.addEventListener('kathy:checkout:open', handleCheckoutOpen)
@@ -695,7 +697,22 @@ export const KathyPanel: React.FC<KathyPanelProps> = ({ isOpen, entity, onClose 
     setCheckout(null)
   }
   
+  // Clear checkout when panel closes
+  useEffect(() => {
+    if (!isOpen) {
+      setCheckout(null)
+    }
+  }, [isOpen])
+  
   if (!isOpen || !entity) return null
+  
+  // Debug: log panel render state
+  console.log('Kathy Panel: Rendering', { 
+    hasCheckout: !!checkout, 
+    checkoutInvoiceId: checkout?.invoiceId,
+    activeTab,
+    entityId: entity.id
+  })
   
   const tabs: { id: PanelTab; label: string }[] = [
     { id: "overview", label: "Overview" },
