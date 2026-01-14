@@ -133,94 +133,136 @@ async function createStripeSession(params: CreatePaymentSessionParams): Promise<
 }
 
 /**
- * RunPayments - Hosted Payment Page
- * Uses RunPayments' hosted capture page with URL parameters
+ * RunPayments - Hosted Payment Page (HPP)
+ * Creates a hosted payment page via RunPayments HPP API
+ * Documentation: https://docs.runpayments.io/reference/payments-api/create-hosted-payment-page
  */
 async function createRunPaymentsSession(params: CreatePaymentSessionParams): Promise<PaymentSession> {
-  const apiKey = process.env.RUNPAYMENTS_API_KEY
-  // Allow configurable capture base URL (production or sandbox)
-  const captureBaseUrl = process.env.RUNPAYMENTS_CAPTURE_BASE_URL || 'https://pay.sandbox.runpayments-ab.io/capture'
+  const accessToken = process.env.RUNPAYMENTS_API_KEY
+  const ccMid = process.env.RUNPAYMENTS_CC_MID
+  const hppApiUrl = process.env.RUNPAYMENTS_HPP_API_URL || 'https://javelin.runpayments.io/api/v1/hpp'
 
-  if (!apiKey) {
-    throw new Error('RUNPAYMENTS_API_KEY must be configured')
+  if (!accessToken) {
+    throw new Error('RUNPAYMENTS_API_KEY (access token) must be configured')
   }
 
-  logger.info('Creating RunPayments hosted payment URL', {
+  if (!ccMid) {
+    throw new Error('RUNPAYMENTS_CC_MID (credit card merchant ID) must be configured')
+  }
+
+  logger.info('Creating RunPayments Hosted Payment Page', {
     invoiceId: params.invoiceId,
     amount: params.amount,
-    captureBaseUrl: captureBaseUrl.substring(0, 50) + '...' // Log partial URL for security
+    hppApiUrl
   })
 
   try {
-    // Build the hosted payment page URL with parameters
-    // Format: <base_url>?source_key=XXX&amount=YYY&invoice=ZZZ
-    const paymentUrl = new URL(captureBaseUrl)
+    // Build hpp_options array for custom fields
+    const hppOptions: Array<{ name: string; value: string; is_readonly?: boolean; is_required?: boolean }> = []
     
-    // Add required parameters (trim API key to remove any whitespace/newlines)
-    paymentUrl.searchParams.set('source_key', apiKey.trim())
-    paymentUrl.searchParams.set('amount', params.amount.toFixed(2))
-    paymentUrl.searchParams.set('invoice', params.invoiceId)
+    // Add invoice ID as custom field
+    hppOptions.push({
+      name: 'invoice_id',
+      value: params.invoiceId,
+      is_readonly: true,
+      is_required: true
+    })
     
-    // Add optional parameters
-    if (params.description) {
-      paymentUrl.searchParams.set('description', params.description)
-    }
+    // Add payment session ID as custom field
+    hppOptions.push({
+      name: 'custom_01',
+      value: params.paymentSessionId,
+      is_readonly: true,
+      is_required: true
+    })
     
-    // Add customer prefill data (if provided and supported by RunPayments)
+    // Add source identifier
+    hppOptions.push({
+      name: 'custom_02',
+      value: 'kathy',
+      is_readonly: true,
+      is_required: true
+    })
+    
+    // Add customer prefill data if provided
     if (params.customerName) {
-      paymentUrl.searchParams.set('customer_name', params.customerName)
+      hppOptions.push({
+        name: 'custom_03',
+        value: params.customerName
+      })
     }
     
     if (params.customerEmail) {
-      paymentUrl.searchParams.set('customer_email', params.customerEmail)
+      hppOptions.push({
+        name: 'email',
+        value: params.customerEmail
+      })
     }
     
     if (params.customerPhone) {
-      paymentUrl.searchParams.set('customer_phone', params.customerPhone)
+      hppOptions.push({
+        name: 'phone',
+        value: params.customerPhone
+      })
     }
     
-    if (params.customerAddress) {
-      if (params.customerAddress.street) {
-        paymentUrl.searchParams.set('billing_address_line1', params.customerAddress.street)
-      }
-      if (params.customerAddress.city) {
-        paymentUrl.searchParams.set('billing_address_city', params.customerAddress.city)
-      }
-      if (params.customerAddress.state) {
-        paymentUrl.searchParams.set('billing_address_state', params.customerAddress.state)
-      }
-      if (params.customerAddress.zip) {
-        paymentUrl.searchParams.set('billing_address_postal_code', params.customerAddress.zip)
-      }
-      if (params.customerAddress.country) {
-        paymentUrl.searchParams.set('billing_address_country', params.customerAddress.country)
-      }
+    if (params.customerAddress?.street) {
+      hppOptions.push({
+        name: 'address',
+        value: params.customerAddress.street
+      })
     }
     
-    // Add metadata in URL parameters (RunPayments will include in webhook)
-    paymentUrl.searchParams.set('metadata[paymentSessionId]', params.paymentSessionId)
-    paymentUrl.searchParams.set('metadata[source]', 'kathy')
+    // Create HPP via API
+    const response = await fetch(hppApiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: params.description || `Invoice ${params.invoiceId}`,
+        cc_mid: ccMid.trim(),
+        amount: params.amount.toFixed(2),
+        lock_amount: true,
+        disable_after_payment: true,
+        name_on_account: params.customerName || '',
+        hpp_options: hppOptions
+      })
+    })
 
-    const finalUrl = paymentUrl.toString()
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error('RunPayments HPP API error', { 
+        status: response.status, 
+        statusText: response.statusText,
+        error: errorText
+      })
+      throw new Error(`RunPayments HPP API error: ${response.status} - ${errorText}`)
+    }
 
-    logger.info('RunPayments payment URL created', { 
+    const hppResponse = await response.json()
+    
+    if (!hppResponse.url) {
+      logger.error('No URL in HPP response', { response: hppResponse })
+      throw new Error('RunPayments HPP API did not return a URL')
+    }
+
+    logger.info('RunPayments HPP created successfully', { 
       invoiceId: params.invoiceId,
-      baseUrl: captureBaseUrl,
-      hasApiKey: !!apiKey,
       amount: params.amount,
-      urlLength: finalUrl.length,
-      urlPreview: finalUrl.substring(0, 150) + '...' // Log more of URL for debugging
+      hppUrl: hppResponse.url.substring(0, 100) + '...'
     })
 
     return {
-      id: params.paymentSessionId, // Use our session ID as the payment ID
+      id: params.paymentSessionId,
       amount: params.amount,
       currency: params.currency,
-      paymentUrl: finalUrl,
+      paymentUrl: hppResponse.url,
       status: 'pending'
     }
   } catch (error) {
-    logger.error('Error creating RunPayments payment URL', error)
+    logger.error('Error creating RunPayments HPP', error)
     throw error
   }
 }
