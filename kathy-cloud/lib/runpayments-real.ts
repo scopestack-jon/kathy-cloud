@@ -153,7 +153,9 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
   logger.info('Creating RunPayments Hosted Payment Page', {
     invoiceId: params.invoiceId,
     amount: params.amount,
-    hppApiUrl
+    hppApiUrl,
+    hasAccessToken: !!accessToken,
+    hasCcMid: !!ccMid
   })
 
   try {
@@ -214,21 +216,33 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     }
     
     // Create HPP via API
+    const requestBody = {
+      name: params.description || `Invoice ${params.invoiceId}`,
+      cc_mid: ccMid.trim(),
+      amount: params.amount.toFixed(2),
+      lock_amount: true,
+      disable_after_payment: true,
+      name_on_account: params.customerName || '',
+      hpp_options: hppOptions
+    }
+    
+    logger.info('Sending HPP API request', {
+      url: hppApiUrl,
+      bodyPreview: {
+        name: requestBody.name,
+        cc_mid: requestBody.cc_mid,
+        amount: requestBody.amount,
+        hpp_options_count: hppOptions.length
+      }
+    })
+    
     const response = await fetch(hppApiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken.trim()}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        name: params.description || `Invoice ${params.invoiceId}`,
-        cc_mid: ccMid.trim(),
-        amount: params.amount.toFixed(2),
-        lock_amount: true,
-        disable_after_payment: true,
-        name_on_account: params.customerName || '',
-        hpp_options: hppOptions
-      })
+      body: JSON.stringify(requestBody)
     })
 
     if (!response.ok) {
@@ -236,7 +250,14 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
       logger.error('RunPayments HPP API error', { 
         status: response.status, 
         statusText: response.statusText,
-        error: errorText
+        error: errorText,
+        requestBody: {
+          name: params.description || `Invoice ${params.invoiceId}`,
+          cc_mid: ccMid.trim(),
+          amount: params.amount.toFixed(2),
+          hasAccessToken: !!accessToken,
+          hppApiUrl
+        }
       })
       throw new Error(`RunPayments HPP API error: ${response.status} - ${errorText}`)
     }
@@ -262,7 +283,12 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
       status: 'pending'
     }
   } catch (error) {
-    logger.error('Error creating RunPayments HPP', error)
+    logger.error('Error creating RunPayments HPP', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      invoiceId: params.invoiceId,
+      amount: params.amount
+    })
     throw error
   }
 }
