@@ -111,6 +111,8 @@ class ConfiguratorManager {
   }
   private clickHandler: ((e: MouseEvent) => void) | null = null
   private highlightedCell: HTMLElement | null = null
+  private appName?: string
+  private appUrl?: string
 
   start(appName?: string, urlPattern?: string) {
     console.log("Kathy: Starting configuration mode")
@@ -284,6 +286,9 @@ class ConfiguratorManager {
         })
 
         if (response.ok) {
+          const savedConfig = await response.json()
+          console.log('Kathy: Configuration saved successfully:', savedConfig)
+          
           // Also save to local storage for immediate use
           await chrome.storage.local.set({
             kathyConfig: {
@@ -299,10 +304,11 @@ class ConfiguratorManager {
                 `Invoice ID: Column ${config.selectorConfig.invoiceIdColumn}\n` +
                 `Amount: Column ${config.selectorConfig.amountColumn}\n` +
                 `Status: Column ${config.selectorConfig.statusColumn}\n\n` +
-                `Kathy will now work on this application!`)
+                `Kathy will now work on this application!\n\nURL Pattern: ${config.urlPattern}`)
         } else {
-          const error = await response.json()
-          alert(`❌ Error saving configuration: ${error.error}\n\nPlease try again or contact support.`)
+          const errorData = await response.json()
+          console.error('Kathy: Error saving configuration:', errorData)
+          alert(`❌ Error saving configuration: ${errorData.error}\n\nPlease try again or contact support.`)
         }
       } catch (error) {
         console.error('Kathy: Error saving to API:', error)

@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PlasmoCSConfig } from 'plasmo'
+import { authenticatedFetch } from '../lib/auth-refresh'
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
@@ -78,15 +79,28 @@ class UniversalKathyInjector {
     try {
       if (this.isAuthenticated) {
         // Fetch from API with auto token refresh
+        console.log(`Kathy: Fetching configurations from ${API_URL}/api/applications`)
         const response = await authenticatedFetch(`${API_URL}/api/applications`)
 
         if (response.ok) {
           const { applications } = await response.json()
+          console.log(`Kathy: Received ${applications.length} application(s)`, applications)
           
           // Find matching config for current URL
-          this.appConfig = applications.find((app: AppConfig) => 
-            new RegExp(app.urlPattern.replace(/\*/g, '.*')).test(window.location.href)
-          )
+          this.appConfig = applications.find((app: AppConfig) => {
+            const pattern = new RegExp(app.urlPattern.replace(/\*/g, '.*'))
+            const matches = pattern.test(window.location.href)
+            console.log(`Kathy: Testing ${app.applicationName} (${app.urlPattern}) against ${window.location.href}: ${matches}`)
+            return matches
+          })
+          
+          if (this.appConfig) {
+            console.log(`Kathy: Matched configuration:`, this.appConfig)
+          } else {
+            console.log(`Kathy: No matching configuration found for ${window.location.href}`)
+          }
+        } else {
+          console.error(`Kathy: API request failed with status ${response.status}`)
         }
       } else {
         // Trial mode - use localStorage cache or default configs
