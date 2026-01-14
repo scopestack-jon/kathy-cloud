@@ -87,9 +87,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         type: 'popup',
         width: 600,
         height: 800,
-        focused: true,
-        left: Math.round((screen.width - 600) / 2),
-        top: Math.round((screen.height - 800) / 2)
+        focused: true
+        // Note: Cannot use screen.width/height in service worker
+        // Chrome will center the popup automatically
       }, (window) => {
         if (chrome.runtime.lastError) {
           kathyLog('Error creating popup window:', chrome.runtime.lastError)
