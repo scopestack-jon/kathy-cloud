@@ -138,12 +138,13 @@ async function createStripeSession(params: CreatePaymentSessionParams): Promise<
  * Documentation: https://docs.runpayments.io/reference/payments-api/create-hosted-payment-page
  */
 async function createRunPaymentsSession(params: CreatePaymentSessionParams): Promise<PaymentSession> {
-  const accessToken = process.env.RUNPAYMENTS_API_KEY
+  // Try public key first for HPP API authentication
+  const accessToken = process.env.RUNPAYMENTS_PUBLIC_KEY || process.env.RUNPAYMENTS_API_KEY
   const ccMid = process.env.RUNPAYMENTS_CC_MID
   const hppApiUrl = process.env.RUNPAYMENTS_HPP_API_URL || 'https://javelin.runpayments.io/api/v1/hpp'
 
   if (!accessToken) {
-    throw new Error('RUNPAYMENTS_API_KEY (access token) must be configured')
+    throw new Error('RUNPAYMENTS_PUBLIC_KEY or RUNPAYMENTS_API_KEY must be configured')
   }
 
   if (!ccMid) {
@@ -155,7 +156,9 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     amount: params.amount,
     hppApiUrl,
     hasAccessToken: !!accessToken,
-    hasCcMid: !!ccMid
+    hasCcMid: !!ccMid,
+    usingPublicKey: !!process.env.RUNPAYMENTS_PUBLIC_KEY,
+    tokenPreview: accessToken?.substring(0, 10) + '...'
   })
 
   try {
