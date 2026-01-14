@@ -152,15 +152,15 @@ async function refreshRunPaymentsApiKey(): Promise<string> {
   logger.info('Refreshing RunPayments API key')
 
   try {
-    // Use refresh_token as Bearer token to get new api_key
+    // Try: Use current api_key as Bearer token and refresh_token in body
     const response = await fetch(refreshUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${refreshToken.trim()}`,
+        'Authorization': `Bearer ${currentApiKey.trim()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        token: currentApiKey.trim()
+        token: refreshToken.trim()
       })
     })
 
