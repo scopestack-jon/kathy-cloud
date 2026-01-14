@@ -205,7 +205,11 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
 
     logger.info('RunPayments payment URL created', { 
       invoiceId: params.invoiceId,
-      url: finalUrl.substring(0, 100) + '...' // Log partial URL for security
+      baseUrl: captureBaseUrl,
+      hasApiKey: !!apiKey,
+      amount: params.amount,
+      urlLength: finalUrl.length,
+      urlPreview: finalUrl.substring(0, 150) + '...' // Log more of URL for debugging
     })
 
     return {

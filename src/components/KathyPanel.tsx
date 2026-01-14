@@ -440,6 +440,11 @@ const CheckoutTab: React.FC<{
   const [embedBlocked, setEmbedBlocked] = useState(false)
   const [loadTimeout, setLoadTimeout] = useState(false)
   
+  // Log the full payment URL for debugging
+  useEffect(() => {
+    console.log('Kathy Checkout: Full Payment URL:', checkout.paymentUrl)
+  }, [checkout.paymentUrl])
+  
   useEffect(() => {
     // Start a timer to detect if iframe fails to load
     const timer = setTimeout(() => {
