@@ -157,13 +157,18 @@ async function handlePost(request: NextRequest) {
       error
     })
     
-    // Expose detailed error in development/debug mode
-    const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true'
-    
+    // Temporarily expose all error details for debugging
     return NextResponse.json(
       { 
         error: 'Internal server error',
-        ...(isDev && { details: errorMessage, stack: errorStack })
+        details: errorMessage,
+        stack: errorStack,
+        debugInfo: {
+          nodeEnv: process.env.NODE_ENV,
+          debugFlag: process.env.DEBUG,
+          hasApiKey: !!process.env.RUNPAYMENTS_API_KEY,
+          hasCcMid: !!process.env.RUNPAYMENTS_CC_MID
+        }
       },
       { status: 500, headers: corsHeaders }
     )
