@@ -11,12 +11,7 @@ export interface PanelEntity {
   data: any
 }
 
-export interface CheckoutState {
-  paymentUrl: string
-  paymentSessionId: string
-  invoiceId: string
-  amount: number
-}
+// Removed CheckoutState - we now open payments directly in popup windows
 
 export interface KathyPanelProps {
   isOpen: boolean
