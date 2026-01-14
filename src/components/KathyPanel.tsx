@@ -65,6 +65,18 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
     const { invoiceId, amount, status, lastUpdated } = entity.data
     const summary = enrichedData?.summary
     
+    // Debug logging
+    console.log('Kathy Panel: Rendering OverviewTab', {
+      invoiceId,
+      hasEnrichedData: !!enrichedData,
+      summary,
+      entityStatus: status,
+      shouldShowPaid: summary?.latestStatus === 'confirmed' || 
+                      summary?.latestStatus === 'paid_and_confirmed' || 
+                      status === 'confirmed' ||
+                      status === 'paid_and_confirmed'
+    })
+    
     // Show loading only if we're still fetching AND don't have basic data
     if (loading && !invoiceId) {
       return (

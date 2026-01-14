@@ -173,35 +173,71 @@ class UniversalKathyInjector {
     })
   }
 
-  private injectBadge(cell: HTMLTableCellElement, data: { invoiceId: string, amount: number, row: Element }) {
-    // Check if invoice is already paid
+  private async injectBadge(cell: HTMLTableCellElement, data: { invoiceId: string, amount: number, row: Element }) {
+    // Check if badge already exists
     const existingBadge = cell.querySelector('[data-kathy-badge]')
     if (existingBadge) return
 
+    // Check if invoice is already paid
+    const isPaid = await this.checkIfPaid(data.invoiceId)
+
     const badge = document.createElement('span')
     badge.setAttribute('data-kathy-badge', 'true')
-    badge.textContent = 'K'
-    badge.style.cssText = `
-      display: inline-block;
-      background: #4CAF50;
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-weight: bold;
-      cursor: pointer;
-      margin-left: 8px;
-      font-size: 12px;
-      transition: all 0.2s;
-    `
+    badge.setAttribute('data-invoice-id', data.invoiceId) // Add invoice ID for later reference
     
-    badge.onmouseenter = () => {
-      badge.style.backgroundColor = '#45a049'
-      badge.style.transform = 'scale(1.05)'
-    }
-    
-    badge.onmouseleave = () => {
-      badge.style.backgroundColor = '#4CAF50'
-      badge.style.transform = 'scale(1)'
+    if (isPaid) {
+      // Inject as "Paid" badge
+      badge.textContent = '✓ Paid'
+      badge.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 10px;
+        margin-left: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: white;
+        background: linear-gradient(135deg, #2E7D32 0%, #1B5E20 100%);
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        vertical-align: middle;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: all 0.2s;
+        white-space: nowrap;
+      `
+      badge.title = "Collected with Kathy - Click for details"
+      
+      // Add subtle background to row
+      const row = badge.closest('tr')
+      if (row) {
+        (row as HTMLElement).style.backgroundColor = "#f1f8f4"
+      }
+    } else {
+      // Inject as "K" badge
+      badge.textContent = 'K'
+      badge.style.cssText = `
+        display: inline-block;
+        background: #4CAF50;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-left: 8px;
+        font-size: 12px;
+        transition: all 0.2s;
+      `
+      
+      badge.onmouseenter = () => {
+        badge.style.backgroundColor = '#45a049'
+        badge.style.transform = 'scale(1.05)'
+      }
+      
+      badge.onmouseleave = () => {
+        badge.style.backgroundColor = '#4CAF50'
+        badge.style.transform = 'scale(1)'
+      }
     }
     
     badge.onclick = async (e) => {
@@ -210,6 +246,61 @@ class UniversalKathyInjector {
     }
     
     cell.appendChild(badge)
+  }
+  
+  private async checkIfPaid(invoiceId: string): Promise<boolean> {
+    try {
+      const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+      const response = await authenticatedFetch(`${API_URL}/api/entities/invoice/${invoiceId}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        const status = data.data?.summary?.latestStatus
+        return status === 'paid_and_confirmed' || status === 'confirmed'
+      }
+    } catch (error) {
+      console.error('Kathy: Error checking payment status', error)
+    }
+    return false
+  }
+  
+  markInvoiceAsPaid(invoiceId: string) {
+    // Find the badge for this invoice
+    const badge = document.querySelector(`[data-invoice-id="${invoiceId}"]`) as HTMLSpanElement
+    if (!badge) {
+      console.log('Kathy: Badge not found for invoice', invoiceId)
+      return
+    }
+    
+    // Update badge to "Paid" state
+    badge.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      margin-left: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(135deg, #2E7D32 0%, #1B5E20 100%);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      vertical-align: middle;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: all 0.2s;
+      white-space: nowrap;
+    `
+    badge.textContent = "✓ Paid"
+    badge.title = "Collected with Kathy - Click for details"
+    
+    // Also add subtle background color to the row
+    const row = badge.closest('tr')
+    if (row) {
+      (row as HTMLElement).style.backgroundColor = "#f1f8f4" // Very subtle green tint
+    }
+    
+    console.log('Kathy: Badge updated to Paid state', { invoiceId })
   }
 
   private async handleBadgeClick(data: { invoiceId: string, amount: number }) {
@@ -546,6 +637,12 @@ document.addEventListener('kathy:start-payment', async (event: any) => {
               await confirmPayment(paymentSessionId)
               console.log('Kathy: Payment confirmed', { invoiceId })
               
+              // Update the K badge to show "✓ Paid"
+              const injector = (window as any).__kathyInjector
+              if (injector) {
+                injector.markInvoiceAsPaid(invoiceId)
+              }
+              
               // Update panel with new status
               panelManager.update({
                 type: 'invoice',
@@ -592,6 +689,9 @@ document.addEventListener('kathy:start-payment', async (event: any) => {
 // Initialize injector
 const injector = new UniversalKathyInjector()
 injector.init()
+
+// Expose injector to global scope for cross-function access
+;(window as any).__kathyInjector = injector
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
