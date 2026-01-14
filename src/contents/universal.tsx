@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PlasmoCSConfig } from 'plasmo'
 import { authenticatedFetch } from '../lib/auth-refresh'
+import { panelManager, PanelEntity } from '../components/PanelManager'
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
@@ -29,14 +30,6 @@ interface AppConfig {
     amountPattern: string
     tableSelector?: string
   }
-}
-
-interface InvoiceData {
-  invoiceId: string
-  amount: number
-  applicationName: string
-  applicationConfigId: string
-  sourceUrl: string
 }
 
 class UniversalKathyInjector {
@@ -229,18 +222,21 @@ class UniversalKathyInjector {
     }
 
     // Open panel with invoice data
-    const invoiceData: InvoiceData = {
-      invoiceId: data.invoiceId,
-      amount: data.amount,
-      applicationName: this.appConfig!.applicationName,
-      applicationConfigId: this.appConfig!.id,
-      sourceUrl: window.location.href
+    const entity: PanelEntity = {
+      type: 'invoice',
+      id: data.invoiceId,
+      displayName: `Invoice ${data.invoiceId}`,
+      data: {
+        invoiceId: data.invoiceId,
+        amount: data.amount,
+        applicationName: this.appConfig!.applicationName,
+        applicationConfigId: this.appConfig!.id,
+        sourceUrl: window.location.href
+      }
     }
 
-    chrome.runtime.sendMessage({
-      type: 'openPanel',
-      data: invoiceData
-    })
+    console.log('Kathy: Opening panel for invoice:', entity)
+    panelManager.open(entity)
 
     // Increment trial usage if not authenticated
     if (!this.isAuthenticated) {
