@@ -222,28 +222,25 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     // Build hpp_options array for custom fields  
     const hppOptions: Array<{ name: string; value: string; is_readonly?: boolean; is_required?: boolean }> = []
     
-    // Add invoice ID as custom field
+    // Add invoice ID as custom field (readonly but not required - per API constraint)
     hppOptions.push({
       name: 'invoice_id',
       value: params.invoiceId,
-      is_readonly: true,
-      is_required: true
+      is_readonly: true
     })
     
     // Add payment session ID as custom field
     hppOptions.push({
       name: 'custom_01',
       value: params.paymentSessionId,
-      is_readonly: true,
-      is_required: true
+      is_readonly: true
     })
     
     // Add source identifier
     hppOptions.push({
       name: 'custom_02',
       value: 'kathy',
-      is_readonly: true,
-      is_required: true
+      is_readonly: true
     })
     
     // Add customer prefill data if provided
