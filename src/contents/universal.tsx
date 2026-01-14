@@ -600,13 +600,34 @@ document.addEventListener('kathy:start-payment', async (event: any) => {
     
     console.log('Kathy: Payment session created', { paymentSessionId, paymentUrl })
     
-    // Step 2: Show alert
-    alert(`Payment for Invoice #${invoiceId} (${amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })})\n\nYou will now be redirected to complete payment.`)
+    // Step 2: Open checkout in panel
+    const entity: PanelEntity = {
+      type: 'invoice',
+      id: invoiceId,
+      displayName: `Invoice ${invoiceId}`,
+      data: {
+        invoiceId,
+        amount,
+        applicationName: currentApp.applicationName,
+        applicationConfigId: currentApp.id,
+        sourceUrl: window.location.href
+      }
+    }
     
-    // Step 3: Open payment URL
-    window.open(paymentUrl, '_blank')
+    // Open the panel if not already open
+    panelManager.open(entity)
     
-    console.log('Kathy: Payment window opened, starting polling')
+    // Dispatch checkout event to show payment UI in panel
+    document.dispatchEvent(new CustomEvent('kathy:checkout:open', {
+      detail: {
+        paymentUrl,
+        paymentSessionId,
+        invoiceId,
+        amount
+      }
+    }))
+    
+    console.log('Kathy: Checkout opened in panel, starting polling')
     
     // Step 4: Poll for payment status
     const pollInterval = 3000 // 3 seconds

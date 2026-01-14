@@ -8,6 +8,17 @@ export interface CreatePaymentSessionParams {
   invoiceId: string
   paymentSessionId: string
   description?: string
+  // Optional customer prefill data
+  customerName?: string
+  customerEmail?: string
+  customerPhone?: string
+  customerAddress?: {
+    street?: string
+    city?: string
+    state?: string
+    zip?: string
+    country?: string
+  }
 }
 
 export interface PaymentSession {
@@ -127,6 +138,8 @@ async function createStripeSession(params: CreatePaymentSessionParams): Promise<
  */
 async function createRunPaymentsSession(params: CreatePaymentSessionParams): Promise<PaymentSession> {
   const apiKey = process.env.RUNPAYMENTS_API_KEY
+  // Allow configurable capture base URL (production or sandbox)
+  const captureBaseUrl = process.env.RUNPAYMENTS_CAPTURE_BASE_URL || 'https://pay.sandbox.runpayments-ab.io/capture'
 
   if (!apiKey) {
     throw new Error('RUNPAYMENTS_API_KEY must be configured')
@@ -134,13 +147,14 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
 
   logger.info('Creating RunPayments hosted payment URL', {
     invoiceId: params.invoiceId,
-    amount: params.amount
+    amount: params.amount,
+    captureBaseUrl: captureBaseUrl.substring(0, 50) + '...' // Log partial URL for security
   })
 
   try {
     // Build the hosted payment page URL with parameters
-    // Format: https://pay.sandbox.runpayments-ab.io/capture?source_key=XXX&amount=YYY&invoice=ZZZ
-    const paymentUrl = new URL('https://pay.sandbox.runpayments-ab.io/capture')
+    // Format: <base_url>?source_key=XXX&amount=YYY&invoice=ZZZ
+    const paymentUrl = new URL(captureBaseUrl)
     
     // Add required parameters (trim API key to remove any whitespace/newlines)
     paymentUrl.searchParams.set('source_key', apiKey.trim())
@@ -150,6 +164,37 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     // Add optional parameters
     if (params.description) {
       paymentUrl.searchParams.set('description', params.description)
+    }
+    
+    // Add customer prefill data (if provided and supported by RunPayments)
+    if (params.customerName) {
+      paymentUrl.searchParams.set('customer_name', params.customerName)
+    }
+    
+    if (params.customerEmail) {
+      paymentUrl.searchParams.set('customer_email', params.customerEmail)
+    }
+    
+    if (params.customerPhone) {
+      paymentUrl.searchParams.set('customer_phone', params.customerPhone)
+    }
+    
+    if (params.customerAddress) {
+      if (params.customerAddress.street) {
+        paymentUrl.searchParams.set('billing_address_line1', params.customerAddress.street)
+      }
+      if (params.customerAddress.city) {
+        paymentUrl.searchParams.set('billing_address_city', params.customerAddress.city)
+      }
+      if (params.customerAddress.state) {
+        paymentUrl.searchParams.set('billing_address_state', params.customerAddress.state)
+      }
+      if (params.customerAddress.zip) {
+        paymentUrl.searchParams.set('billing_address_postal_code', params.customerAddress.zip)
+      }
+      if (params.customerAddress.country) {
+        paymentUrl.searchParams.set('billing_address_country', params.customerAddress.country)
+      }
     }
     
     // Add metadata in URL parameters (RunPayments will include in webhook)

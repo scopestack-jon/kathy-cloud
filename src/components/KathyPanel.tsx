@@ -11,6 +11,13 @@ export interface PanelEntity {
   data: any
 }
 
+export interface CheckoutState {
+  paymentUrl: string
+  paymentSessionId: string
+  invoiceId: string
+  amount: number
+}
+
 export interface KathyPanelProps {
   isOpen: boolean
   entity: PanelEntity | null
@@ -424,27 +431,269 @@ const NotesTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
   )
 }
 
+// Checkout Tab Component
+const CheckoutTab: React.FC<{ 
+  checkout: CheckoutState, 
+  onClose: () => void 
+}> = ({ checkout, onClose }) => {
+  const [iframeLoading, setIframeLoading] = useState(true)
+  const [embedBlocked, setEmbedBlocked] = useState(false)
+  const [loadTimeout, setLoadTimeout] = useState(false)
+  
+  useEffect(() => {
+    // Start a timer to detect if iframe fails to load
+    const timer = setTimeout(() => {
+      if (iframeLoading) {
+        console.log('Kathy Checkout: Iframe load timeout - may be blocked')
+        setLoadTimeout(true)
+      }
+    }, 3000) // 3 second timeout
+    
+    return () => clearTimeout(timer)
+  }, [iframeLoading])
+  
+  const handleIframeLoad = () => {
+    console.log('Kathy Checkout: Iframe loaded successfully')
+    setIframeLoading(false)
+    setEmbedBlocked(false)
+  }
+  
+  const handleIframeError = () => {
+    console.log('Kathy Checkout: Iframe failed to load')
+    setIframeLoading(false)
+    setEmbedBlocked(true)
+  }
+  
+  const openInPopup = () => {
+    console.log('Kathy Checkout: Opening in popup window')
+    chrome.runtime.sendMessage({
+      type: 'openPaymentPopup',
+      url: checkout.paymentUrl
+    })
+  }
+  
+  const openInNewTab = () => {
+    console.log('Kathy Checkout: Opening in new tab')
+    window.open(checkout.paymentUrl, '_blank')
+  }
+  
+  return (
+    <div style={{ 
+      height: "100%", 
+      display: "flex", 
+      flexDirection: "column",
+      backgroundColor: "#f5f5f5"
+    }}>
+      {/* Checkout Header */}
+      <div style={{ 
+        padding: "16px 20px", 
+        backgroundColor: "white",
+        borderBottom: "1px solid #e0e0e0"
+      }}>
+        <div style={{ fontSize: "16px", fontWeight: "600", color: "#333", marginBottom: "4px" }}>
+          Complete Payment
+        </div>
+        <div style={{ fontSize: "13px", color: "#666" }}>
+          Invoice #{checkout.invoiceId} • {checkout.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+        </div>
+      </div>
+      
+      {/* Iframe Container */}
+      <div style={{ 
+        flex: 1, 
+        position: "relative", 
+        backgroundColor: "white",
+        overflow: "hidden"
+      }}>
+        {/* Loading Spinner */}
+        {iframeLoading && (
+          <div style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "white",
+            zIndex: 10
+          }}>
+            <div style={{
+              width: "40px",
+              height: "40px",
+              border: "4px solid #f3f3f3",
+              borderTop: "4px solid #4CAF50",
+              borderRadius: "50%",
+              animation: "spin 1s linear infinite"
+            }} />
+            <div style={{ marginTop: "16px", fontSize: "14px", color: "#666" }}>
+              Loading secure checkout...
+            </div>
+          </div>
+        )}
+        
+        {/* Embed Blocked Warning */}
+        {(embedBlocked || loadTimeout) && (
+          <div style={{
+            position: "absolute",
+            top: "20px",
+            left: "20px",
+            right: "20px",
+            padding: "12px 16px",
+            backgroundColor: "#FFF3E0",
+            border: "1px solid #FFB74D",
+            borderRadius: "6px",
+            fontSize: "13px",
+            color: "#E65100",
+            zIndex: 20
+          }}>
+            <strong>Embedded checkout may be blocked.</strong><br />
+            Use the buttons below to complete payment.
+          </div>
+        )}
+        
+        {/* Payment Iframe */}
+        <iframe
+          src={checkout.paymentUrl}
+          onLoad={handleIframeLoad}
+          onError={handleIframeError}
+          style={{
+            width: "100%",
+            height: "100%",
+            border: "none",
+            display: "block"
+          }}
+          title="Payment Checkout"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation"
+        />
+      </div>
+      
+      {/* Fallback Actions */}
+      <div style={{ 
+        padding: "16px 20px", 
+        backgroundColor: "white",
+        borderTop: "1px solid #e0e0e0",
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px"
+      }}>
+        <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
+          Payment not loading?
+        </div>
+        <button
+          onClick={openInPopup}
+          style={{
+            padding: "10px 16px",
+            fontSize: "14px",
+            fontWeight: "500",
+            color: "white",
+            backgroundColor: "#4CAF50",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+            textAlign: "center"
+          }}
+        >
+          Open in Popup Window
+        </button>
+        <button
+          onClick={openInNewTab}
+          style={{
+            padding: "10px 16px",
+            fontSize: "14px",
+            fontWeight: "500",
+            color: "#4CAF50",
+            backgroundColor: "white",
+            border: "1px solid #4CAF50",
+            borderRadius: "6px",
+            cursor: "pointer",
+            textAlign: "center"
+          }}
+        >
+          Open in New Tab
+        </button>
+        <button
+          onClick={onClose}
+          style={{
+            padding: "8px 16px",
+            fontSize: "13px",
+            fontWeight: "400",
+            color: "#666",
+            backgroundColor: "transparent",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "center"
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+      
+      {/* Spinner Animation */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 
 // Main Panel Component
 export const KathyPanel: React.FC<KathyPanelProps> = ({ isOpen, entity, onClose }) => {
   const [activeTab, setActiveTab] = useState<PanelTab>("overview")
+  const [checkout, setCheckout] = useState<CheckoutState | null>(null)
   
   useEffect(() => {
     // Reset to overview tab when entity changes
     setActiveTab("overview")
+    // Clear checkout when entity changes
+    setCheckout(null)
   }, [entity])
+  
+  // Listen for checkout:open event
+  useEffect(() => {
+    const handleCheckoutOpen = (event: any) => {
+      const { paymentUrl, paymentSessionId, invoiceId, amount } = event.detail
+      console.log('Kathy Panel: Opening checkout', { paymentSessionId, invoiceId, amount })
+      setCheckout({
+        paymentUrl,
+        paymentSessionId,
+        invoiceId,
+        amount
+      })
+    }
+    
+    document.addEventListener('kathy:checkout:open', handleCheckoutOpen)
+    return () => document.removeEventListener('kathy:checkout:open', handleCheckoutOpen)
+  }, [])
   
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
-        onClose()
+        if (checkout) {
+          // Close checkout view
+          setCheckout(null)
+        } else {
+          // Close panel
+          onClose()
+        }
       }
     }
     
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, checkout])
+  
+  const handleCloseCheckout = () => {
+    console.log('Kathy Panel: Closing checkout')
+    setCheckout(null)
+  }
   
   if (!isOpen || !entity) return null
   
@@ -527,43 +776,53 @@ export const KathyPanel: React.FC<KathyPanelProps> = ({ isOpen, entity, onClose 
           </button>
         </div>
         
-        {/* Tabs */}
-        <div style={{
-          display: "flex",
-          borderBottom: "1px solid #e0e0e0",
-          backgroundColor: "#fafafa"
-        }}>
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                flex: 1,
-                padding: "12px 8px",
-                border: "none",
-                background: "none",
-                fontSize: "13px",
-                fontWeight: activeTab === tab.id ? "600" : "400",
-                color: activeTab === tab.id ? "#4CAF50" : "#666",
-                cursor: "pointer",
-                borderBottom: activeTab === tab.id ? "2px solid #4CAF50" : "2px solid transparent",
-                transition: "all 0.2s"
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Tabs - hide when checkout is active */}
+        {!checkout && (
+          <div style={{
+            display: "flex",
+            borderBottom: "1px solid #e0e0e0",
+            backgroundColor: "#fafafa"
+          }}>
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  flex: 1,
+                  padding: "12px 8px",
+                  border: "none",
+                  background: "none",
+                  fontSize: "13px",
+                  fontWeight: activeTab === tab.id ? "600" : "400",
+                  color: activeTab === tab.id ? "#4CAF50" : "#666",
+                  cursor: "pointer",
+                  borderBottom: activeTab === tab.id ? "2px solid #4CAF50" : "2px solid transparent",
+                  transition: "all 0.2s"
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
         
         {/* Content */}
         <div style={{
           flex: 1,
-          overflowY: "auto",
-          backgroundColor: "white"
+          overflowY: checkout ? "hidden" : "auto",
+          backgroundColor: "white",
+          display: "flex",
+          flexDirection: "column"
         }}>
-          {activeTab === "overview" && <OverviewTab entity={entity} />}
-          {activeTab === "payments" && <PaymentsTab entity={entity} />}
-          {activeTab === "notes" && <NotesTab entity={entity} />}
+          {checkout ? (
+            <CheckoutTab checkout={checkout} onClose={handleCloseCheckout} />
+          ) : (
+            <>
+              {activeTab === "overview" && <OverviewTab entity={entity} />}
+              {activeTab === "payments" && <PaymentsTab entity={entity} />}
+              {activeTab === "notes" && <NotesTab entity={entity} />}
+            </>
+          )}
         </div>
         
         {/* Footer */}
