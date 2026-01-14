@@ -398,6 +398,192 @@ class UniversalKathyInjector {
   }
 }
 
+// API Helper Functions
+async function createPaymentSession(invoiceId: string, amount: number, applicationName: string, applicationConfigId: string) {
+  const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+  
+  try {
+    const response = await authenticatedFetch(`${API_URL}/api/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        invoiceId,
+        amount,
+        currency: 'USD',
+        applicationName,
+        sourceUrl: window.location.href
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('Kathy: Error creating payment session', error)
+    throw error
+  }
+}
+
+async function checkPaymentStatus(paymentSessionId: string) {
+  const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+  
+  try {
+    const response = await authenticatedFetch(`${API_URL}/api/payments/${paymentSessionId}/status`)
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('Kathy: Error checking payment status', error)
+    throw error
+  }
+}
+
+async function confirmPayment(paymentSessionId: string) {
+  const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+  
+  try {
+    const response = await authenticatedFetch(`${API_URL}/api/payments/${paymentSessionId}/confirm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('Kathy: Error confirming payment', error)
+    throw error
+  }
+}
+
+// Listen for payment trigger from panel
+document.addEventListener('kathy:start-payment', async (event: any) => {
+  const { invoiceId, amount } = event.detail
+  const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
+  
+  console.log('Kathy: Payment triggered from panel', { invoiceId, amount })
+  
+  try {
+    // Get application info from the current page
+    const storage = await chrome.storage.local.get(['authToken'])
+    if (!storage.authToken) {
+      alert("Please sign in to collect payments.")
+      return
+    }
+    
+    // Fetch application configs to find the current app
+    const appsResponse = await authenticatedFetch(`${API_URL}/api/applications`)
+    if (!appsResponse.ok) {
+      throw new Error('Failed to fetch application configuration')
+    }
+    
+    const { applications } = await appsResponse.json()
+    const currentApp = applications.find((app: AppConfig) => 
+      new RegExp(app.urlPattern.replace(/\*/g, '.*')).test(window.location.href)
+    )
+    
+    if (!currentApp) {
+      throw new Error('No application configuration found for this page')
+    }
+    
+    console.log('Kathy: Creating payment session', { invoiceId, amount, app: currentApp.applicationName })
+    
+    // Step 1: Create payment session
+    const { paymentSessionId, paymentUrl } = await createPaymentSession(
+      invoiceId, 
+      amount, 
+      currentApp.applicationName,
+      currentApp.id
+    )
+    
+    console.log('Kathy: Payment session created', { paymentSessionId, paymentUrl })
+    
+    // Step 2: Show alert
+    alert(`Payment for Invoice #${invoiceId} (${amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })})\n\nYou will now be redirected to complete payment.`)
+    
+    // Step 3: Open payment URL
+    window.open(paymentUrl, '_blank')
+    
+    console.log('Kathy: Payment window opened, starting polling')
+    
+    // Step 4: Poll for payment status
+    const pollInterval = 3000 // 3 seconds
+    const maxAttempts = 60 // 3 minutes max
+    let attempts = 0
+    
+    const pollStatus = setInterval(async () => {
+      attempts++
+      
+      if (attempts > maxAttempts) {
+        clearInterval(pollStatus)
+        console.log('Kathy: Payment polling timeout')
+        return
+      }
+      
+      try {
+        const status = await checkPaymentStatus(paymentSessionId)
+        console.log('Kathy: Payment status check', { status: status.status, attempt: attempts })
+        
+        // Step 5: When payment succeeds, show update in panel
+        if (status.status === 'paid_pending_consent') {
+          clearInterval(pollStatus)
+          console.log('Kathy: Payment successful!')
+          
+          // Show confirmation prompt
+          if (confirm(`Payment received for Invoice #${invoiceId}!\n\nConfirm to mark as paid?`)) {
+            try {
+              await confirmPayment(paymentSessionId)
+              console.log('Kathy: Payment confirmed', { invoiceId })
+              
+              // Update panel
+              panelManager.update({
+                type: 'invoice',
+                id: invoiceId,
+                displayName: `Invoice ${invoiceId}`,
+                data: {
+                  invoiceId,
+                  amount,
+                  status: 'confirmed',
+                  lastUpdated: new Date().toISOString()
+                }
+              })
+              
+              alert('✅ Payment confirmed and invoice marked as paid!')
+              
+              // Refresh the page to show updated status
+              window.location.reload()
+            } catch (error) {
+              console.error('Kathy: Error confirming payment', error)
+              alert('Error confirming payment. Please try again.')
+            }
+          }
+        } else if (status.status === 'failed') {
+          clearInterval(pollStatus)
+          console.log('Kathy: Payment failed', { invoiceId })
+          alert("Payment failed. Please try again.")
+        }
+      } catch (error) {
+        console.error('Kathy: Error polling payment status', error)
+      }
+    }, pollInterval)
+    
+  } catch (error) {
+    console.error('Kathy: Error initiating payment', error)
+    alert("Failed to initiate payment. Please check your connection and try again.")
+  }
+})
+
 // Initialize injector
 const injector = new UniversalKathyInjector()
 injector.init()
