@@ -25,9 +25,11 @@ const API_SECRET_KEY = process.env.PLASMO_PUBLIC_API_SECRET || 'dev-secret-key-c
 const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
   const [enrichedData, setEnrichedData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   
   useEffect(() => {
     const fetchEnrichedData = async () => {
+      setLoading(true)
       try {
         const response = await authenticatedFetch(
           `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`
@@ -36,6 +38,7 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
         if (response.ok) {
           const data = await response.json()
           setEnrichedData(data.data)
+          console.log('Kathy Panel: Fetched enriched data', data.data)
         }
       } catch (error) {
         console.error("Error fetching enriched data", error)
@@ -45,7 +48,18 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
     }
     
     fetchEnrichedData()
-  }, [entity])
+  }, [entity, refreshTrigger])
+  
+  // Listen for manual refresh requests
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('Kathy Panel: Refreshing data...')
+      setRefreshTrigger(prev => prev + 1)
+    }
+    
+    document.addEventListener('kathy:panel:refresh', handleRefresh)
+    return () => document.removeEventListener('kathy:panel:refresh', handleRefresh)
+  }, [])
   
   if (entity.type === "invoice") {
     const { invoiceId, amount, status, lastUpdated } = entity.data
@@ -278,10 +292,12 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
 const PaymentsTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
   const [payments, setPayments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   
   useEffect(() => {
     // Fetch payment history
     const fetchPayments = async () => {
+      setLoading(true)
       try {
         const response = await authenticatedFetch(
           `${KATHY_CLOUD_URL}/api/entities/${entity.type}/${entity.id}`
@@ -290,6 +306,7 @@ const PaymentsTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
         if (response.ok) {
           const data = await response.json()
           setPayments(data.data.paymentSessions || [])
+          console.log('Kathy Panel: Fetched payment history', data.data.paymentSessions)
         }
       } catch (error) {
         console.error("Error fetching payments", error)
@@ -299,7 +316,18 @@ const PaymentsTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
     }
     
     fetchPayments()
-  }, [entity])
+  }, [entity, refreshTrigger])
+  
+  // Listen for manual refresh requests
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('Kathy Panel: Refreshing payments tab...')
+      setRefreshTrigger(prev => prev + 1)
+    }
+    
+    document.addEventListener('kathy:panel:refresh', handleRefresh)
+    return () => document.removeEventListener('kathy:panel:refresh', handleRefresh)
+  }, [])
   
   if (loading) {
     return (

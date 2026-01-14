@@ -546,7 +546,7 @@ document.addEventListener('kathy:start-payment', async (event: any) => {
               await confirmPayment(paymentSessionId)
               console.log('Kathy: Payment confirmed', { invoiceId })
               
-              // Update panel
+              // Update panel with new status
               panelManager.update({
                 type: 'invoice',
                 id: invoiceId,
@@ -554,15 +554,20 @@ document.addEventListener('kathy:start-payment', async (event: any) => {
                 data: {
                   invoiceId,
                   amount,
-                  status: 'confirmed',
+                  status: 'paid_and_confirmed',
                   lastUpdated: new Date().toISOString()
                 }
               })
               
+              // Trigger panel refresh to fetch latest data from API
+              document.dispatchEvent(new CustomEvent('kathy:panel:refresh'))
+              
               alert('✅ Payment confirmed and invoice marked as paid!')
               
-              // Refresh the page to show updated status
-              window.location.reload()
+              // Give the panel a moment to refresh, then reload page
+              setTimeout(() => {
+                window.location.reload()
+              }, 1000)
             } catch (error) {
               console.error('Kathy: Error confirming payment', error)
               alert('Error confirming payment. Please try again.')
