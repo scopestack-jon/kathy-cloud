@@ -133,18 +133,76 @@ async function createStripeSession(params: CreatePaymentSessionParams): Promise<
 }
 
 /**
+ * Refresh RunPayments API key using refresh token
+ * Documentation: https://docs.runpayments.io/reference/payments-api/refresh-api-keys
+ */
+async function refreshRunPaymentsApiKey(): Promise<string> {
+  const refreshToken = process.env.RUNPAYMENTS_REFRESH_TOKEN
+  const currentApiKey = process.env.RUNPAYMENTS_API_KEY
+  const refreshUrl = 'https://javelin.runpayments.io/api/v1/api_keys/refresh'
+
+  if (!refreshToken) {
+    throw new Error('RUNPAYMENTS_REFRESH_TOKEN must be configured')
+  }
+
+  if (!currentApiKey) {
+    throw new Error('RUNPAYMENTS_API_KEY must be configured')
+  }
+
+  logger.info('Refreshing RunPayments API key')
+
+  try {
+    // Use refresh_token as Bearer token to get new api_key
+    const response = await fetch(refreshUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${refreshToken.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        token: currentApiKey.trim()
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error('RunPayments token refresh failed', {
+        status: response.status,
+        error: errorText
+      })
+      throw new Error(`Token refresh failed: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    
+    if (!data.api_key) {
+      throw new Error('No api_key in refresh response')
+    }
+
+    logger.info('RunPayments API key refreshed successfully', {
+      expiresAt: data.api_key_expires_at,
+      hasNewKey: !!data.api_key
+    })
+
+    return data.api_key
+  } catch (error) {
+    logger.error('Error refreshing RunPayments API key', error)
+    throw error
+  }
+}
+
+/**
  * RunPayments - Hosted Payment Page (HPP)
  * Creates a hosted payment page via RunPayments HPP API
  * Documentation: https://docs.runpayments.io/reference/payments-api/create-hosted-payment-page
  */
 async function createRunPaymentsSession(params: CreatePaymentSessionParams): Promise<PaymentSession> {
-  // Try public key first for HPP API authentication
-  const accessToken = process.env.RUNPAYMENTS_PUBLIC_KEY || process.env.RUNPAYMENTS_API_KEY
   const ccMid = process.env.RUNPAYMENTS_CC_MID
   const hppApiUrl = process.env.RUNPAYMENTS_HPP_API_URL || 'https://javelin.runpayments.io/api/v1/hpp'
+  let apiKey = process.env.RUNPAYMENTS_API_KEY
 
-  if (!accessToken) {
-    throw new Error('RUNPAYMENTS_PUBLIC_KEY or RUNPAYMENTS_API_KEY must be configured')
+  if (!apiKey) {
+    throw new Error('RUNPAYMENTS_API_KEY must be configured')
   }
 
   if (!ccMid) {
@@ -155,14 +213,13 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
     invoiceId: params.invoiceId,
     amount: params.amount,
     hppApiUrl,
-    hasAccessToken: !!accessToken,
-    hasCcMid: !!ccMid,
-    usingPublicKey: !!process.env.RUNPAYMENTS_PUBLIC_KEY,
-    tokenPreview: accessToken?.substring(0, 10) + '...'
+    hasApiKey: !!apiKey,
+    hasCcMid: !!ccMid
   })
 
-  try {
-    // Build hpp_options array for custom fields
+  // Helper function to attempt HPP creation
+  const attemptHppCreation = async (token: string): Promise<Response> => {
+    // Build hpp_options array for custom fields  
     const hppOptions: Array<{ name: string; value: string; is_readonly?: boolean; is_required?: boolean }> = []
     
     // Add invoice ID as custom field
@@ -239,14 +296,33 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
       }
     })
     
-    const response = await fetch(hppApiUrl, {
+    return await fetch(hppApiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken.trim()}`,
+        'Authorization': `Bearer ${token.trim()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
     })
+  }
+
+  try {
+    // First attempt with current API key
+    let response = await attemptHppCreation(apiKey)
+
+    // If 401 Unauthorized, try refreshing the API key and retry
+    if (response.status === 401) {
+      logger.info('Got 401, attempting to refresh API key')
+      
+      try {
+        const newApiKey = await refreshRunPaymentsApiKey()
+        logger.info('Retrying HPP creation with refreshed API key')
+        response = await attemptHppCreation(newApiKey)
+      } catch (refreshError) {
+        logger.error('Failed to refresh API key', refreshError)
+        // Continue with original 401 error handling below
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -258,7 +334,7 @@ async function createRunPaymentsSession(params: CreatePaymentSessionParams): Pro
           name: params.description || `Invoice ${params.invoiceId}`,
           cc_mid: ccMid.trim(),
           amount: params.amount.toFixed(2),
-          hasAccessToken: !!accessToken,
+          hasApiKey: !!apiKey,
           hppApiUrl
         }
       })
