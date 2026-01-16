@@ -99,6 +99,17 @@ async function handlePost(request: NextRequest) {
     })
     
     // Create RunPayments hosted payment session
+    logger.info('Calling createPaymentSession', {
+      amount: body.amount,
+      currency: body.currency || 'USD',
+      invoiceId: compoundInvoiceId,
+      paymentSessionId: paymentSession.id,
+      hasApiKey: !!process.env.RUNPAYMENTS_API_KEY,
+      hasCcMid: !!process.env.RUNPAYMENTS_CC_MID,
+      hasRefreshToken: !!process.env.RUNPAYMENTS_REFRESH_TOKEN,
+      mode: process.env.RUNPAYMENTS_MODE
+    })
+    
     const runPaymentsSession = await createPaymentSession({
       amount: body.amount,
       currency: body.currency || 'USD',
@@ -159,18 +170,30 @@ async function handlePost(request: NextRequest) {
     })
     
     // Temporarily expose all error details for debugging
+    const errorResponse = { 
+      error: 'Internal server error',
+      details: errorMessage,
+      stack: process.env.NODE_ENV === 'development' ? errorStack : undefined,
+      debugInfo: {
+        nodeEnv: process.env.NODE_ENV,
+        debugFlag: process.env.DEBUG,
+        hasApiKey: !!process.env.RUNPAYMENTS_API_KEY,
+        hasCcMid: !!process.env.RUNPAYMENTS_CC_MID,
+        hasRefreshToken: !!process.env.RUNPAYMENTS_REFRESH_TOKEN,
+        mode: process.env.RUNPAYMENTS_MODE,
+        apiKeyPrefix: process.env.RUNPAYMENTS_API_KEY?.substring(0, 10) + '...' || 'missing',
+        ccMidPrefix: process.env.RUNPAYMENTS_CC_MID?.substring(0, 10) + '...' || 'missing'
+      }
+    }
+    
+    logger.error('Returning error response to client', {
+      errorMessage,
+      hasDetails: !!errorResponse.details,
+      debugInfo: errorResponse.debugInfo
+    })
+    
     return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: errorMessage,
-        stack: errorStack,
-        debugInfo: {
-          nodeEnv: process.env.NODE_ENV,
-          debugFlag: process.env.DEBUG,
-          hasApiKey: !!process.env.RUNPAYMENTS_API_KEY,
-          hasCcMid: !!process.env.RUNPAYMENTS_CC_MID
-        }
-      },
+      errorResponse,
       { status: 500, headers: corsHeaders }
     )
   }
