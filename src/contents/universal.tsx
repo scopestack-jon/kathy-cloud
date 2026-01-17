@@ -504,12 +504,61 @@ async function createPaymentSession(invoiceId: string, amount: number, applicati
         amount,
         currency: 'USD',
         applicationName,
+        applicationConfigId,
         sourceUrl: window.location.href
       })
     })
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`)
+      // Clone the response so we can read it multiple times
+      const responseClone = response.clone()
+      let errorMessage = `API error: ${response.status}`
+      let errorDetails: any = null
+      
+      try {
+        // Try to get detailed error information from the response
+        const errorData = await response.json()
+        errorMessage = errorData.details || errorData.error || errorMessage
+        errorDetails = errorData
+        
+        console.error('Kathy: Payment API error details', {
+          status: response.status,
+          error: errorData.error,
+          details: errorData.details,
+          debugInfo: errorData.debugInfo,
+          stack: errorData.stack,
+          fullError: errorData
+        })
+        
+        // Show user-friendly error with details
+        if (errorData.debugInfo) {
+          console.error('Kathy: Environment check:', {
+            hasApiKey: errorData.debugInfo.hasApiKey,
+            hasCcMid: errorData.debugInfo.hasCcMid,
+            hasRefreshToken: errorData.debugInfo.hasRefreshToken,
+            mode: errorData.debugInfo.mode,
+            nodeEnv: errorData.debugInfo.nodeEnv,
+            apiKeyPrefix: errorData.debugInfo.apiKeyPrefix,
+            ccMidPrefix: errorData.debugInfo.ccMidPrefix
+          })
+        }
+      } catch (e) {
+        // If response isn't JSON, try to read as text
+        try {
+          const statusText = await responseClone.text()
+          errorMessage = `API error: ${response.status} - ${statusText}`
+          console.error('Kathy: Failed to parse error response as JSON:', e)
+          console.error('Kathy: Error response text:', statusText)
+        } catch (textError) {
+          errorMessage = `API error: ${response.status} - ${response.statusText}`
+          console.error('Kathy: Failed to read error response:', textError)
+        }
+      }
+      
+      const fullError = new Error(errorMessage)
+      // @ts-ignore - attach details for debugging
+      fullError.details = errorDetails
+      throw fullError
     }
 
     return await response.json()
