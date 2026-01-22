@@ -54,10 +54,22 @@ export default function TestPaymentsPage() {
     setMessage(null)
 
     try {
+      // Get authentication token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setMessage({
+          type: 'error',
+          text: '❌ Error: Not authenticated'
+        })
+        setProcessingId(null)
+        return
+      }
+
       const response = await fetch(`/api/payments/${paymentId}/test-complete`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         }
       })
 
