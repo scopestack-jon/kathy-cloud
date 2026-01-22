@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import logger from '@/lib/logger'
 import { verifyWebhookSignature } from '@/lib/runpayments-real'
+import { syncPaymentToSmartMoving } from '@/lib/smartmoving-sync'
 import type { WebhookEvent } from '@/lib/types'
 
 /**
@@ -226,6 +227,22 @@ export async function POST(request: NextRequest) {
         }
       }
     })
+
+    // Sync to SmartMoving if payment succeeded
+    // Non-blocking - run in background, don't wait for completion
+    if (newStatus === 'paid_pending_consent') {
+      logger.info('Triggering SmartMoving sync', {
+        paymentSessionId: paymentSession.id
+      })
+
+      // Fire and forget - don't await
+      syncPaymentToSmartMoving(paymentSession.id).catch((error) => {
+        logger.error('SmartMoving sync error (non-blocking)', {
+          paymentSessionId: paymentSession.id,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      })
+    }
 
     logger.info('Webhook processed successfully', {
       paymentSessionId: paymentSession.id,

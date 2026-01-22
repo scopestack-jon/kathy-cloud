@@ -177,6 +177,13 @@ export default function DashboardPage() {
             >
               Manage Apps
             </button>
+
+            <button
+              onClick={() => window.location.href = '/dashboard/smartmoving'}
+              className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-medium"
+            >
+              SmartMoving
+            </button>
           </div>
         </div>
 

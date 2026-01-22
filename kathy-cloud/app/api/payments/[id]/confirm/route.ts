@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import logger from '@/lib/logger'
 import { withAuth } from '@/lib/auth'
+import { syncPaymentToSmartMoving } from '@/lib/smartmoving-sync'
 import type { ConfirmPaymentResponse } from '@/lib/types'
 
 // CORS headers for cross-origin requests from extension
@@ -80,6 +81,20 @@ async function handlePost(
           source: 'extension'
         }
       }
+    })
+
+    // Sync to SmartMoving after manual confirmation
+    // Non-blocking - run in background, don't wait for completion
+    logger.info('Triggering SmartMoving sync after manual confirmation', {
+      paymentSessionId: id
+    })
+
+    // Fire and forget - don't await
+    syncPaymentToSmartMoving(id).catch((error) => {
+      logger.error('SmartMoving sync error (non-blocking)', {
+        paymentSessionId: id,
+        error: error instanceof Error ? error.message : String(error)
+      })
     })
 
     logger.info('Payment confirmed successfully', {
