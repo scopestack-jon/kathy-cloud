@@ -69,15 +69,27 @@ export default function SmartMovingPage() {
       })
 
       if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Failed to fetch organization:', response.status, errorText)
         throw new Error('Failed to fetch organization')
       }
 
       const data = await response.json()
+      console.log('Loaded organization data:', {
+        hasOrganization: !!data.organization,
+        organizationId: data.organization?.id,
+        hasSettings: !!data.organization?.settings,
+        hasSmartMoving: !!data.organization?.settings?.smartMoving
+      })
+
       setOrganization(data.organization)
 
       // Set config from organization settings
       if (data.organization?.settings?.smartMoving) {
+        console.log('Loading SmartMoving config from settings:', data.organization.settings.smartMoving)
         setConfig(data.organization.settings.smartMoving)
+      } else {
+        console.log('No SmartMoving config found in settings, using defaults')
       }
 
       // Load recent audit logs

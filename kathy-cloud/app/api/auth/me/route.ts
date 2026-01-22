@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Return user profile with organization
+    // Return user profile with organization (including settings for SmartMoving config)
     return NextResponse.json({
       user: {
         id: dbUser.id,
@@ -154,8 +154,16 @@ export async function GET(request: NextRequest) {
         organization: {
           id: dbUser.organization.id,
           name: dbUser.organization.name,
-          slug: dbUser.organization.slug
+          slug: dbUser.organization.slug,
+          settings: dbUser.organization.settings
         }
+      },
+      // Also return organization at top level for backward compatibility
+      organization: {
+        id: dbUser.organization.id,
+        name: dbUser.organization.name,
+        slug: dbUser.organization.slug,
+        settings: dbUser.organization.settings
       }
     })
 
