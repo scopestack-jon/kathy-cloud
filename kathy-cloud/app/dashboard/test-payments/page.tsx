@@ -75,20 +75,28 @@ export default function TestPaymentsPage() {
 
       const data = await response.json()
 
+      console.log('Test complete response:', { status: response.status, data })
+
       if (response.ok) {
-        setMessage({
-          type: 'success',
+        const message = {
+          type: 'success' as const,
           text: `✅ Payment completed! Status: ${data.oldStatus} → ${data.newStatus}. SmartMoving sync triggered.`
-        })
+        }
+        console.log('Setting success message:', message)
+        setMessage(message)
+
         // Reload payments to show updated status after a brief delay
         setTimeout(async () => {
+          console.log('Reloading payments...')
           await loadPayments()
-        }, 500)
+        }, 1500)
       } else {
-        setMessage({
-          type: 'error',
+        const errorMessage = {
+          type: 'error' as const,
           text: `❌ Error: ${data.error || 'Failed to complete payment'}`
-        })
+        }
+        console.log('Setting error message:', errorMessage)
+        setMessage(errorMessage)
       }
     } catch (error) {
       setMessage({

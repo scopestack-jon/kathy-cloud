@@ -3,8 +3,9 @@ import React, { useState } from "react"
 import { authenticatedFetch } from "../lib/auth-refresh"
 
 // Plasmo content script configuration
+// DISABLED: Universal content script now handles SmartMoving detection
 export const config = {
-  matches: ["https://app.smartmoving.com/*"],
+  matches: ["https://this-will-never-match.example.com/*"],
   run_at: "document_idle"
 }
 
