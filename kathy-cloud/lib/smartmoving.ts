@@ -57,6 +57,17 @@ export interface SmartMovingLeadSearchResult {
   status: number
   leadStatus?: string
   opportunityId?: string
+  quoteNumber?: string
+}
+
+export interface SmartMovingPaginatedResponse<T> {
+  pageNumber: number
+  pageSize: number
+  lastPage: boolean
+  totalPages: number
+  totalResults: number
+  totalThisPage: number
+  pageResults: T[]
 }
 
 export interface UpdateJobNotesParams {
@@ -198,13 +209,17 @@ export class SmartMovingClient {
     return this.retryRequest(async () => {
       logger.info('Searching SmartMoving by email', { email })
 
-      const results = await this.request<SmartMovingLeadSearchResult[]>(
+      const response = await this.request<SmartMovingPaginatedResponse<SmartMovingLeadSearchResult>>(
         `/leads?EmailAddress=${encodeURIComponent(email)}`
       )
+
+      // Handle paginated response
+      const results = response.pageResults || []
 
       logger.info('SmartMoving search results', {
         email,
         count: results.length,
+        totalResults: response.totalResults
       })
 
       return results
@@ -221,21 +236,32 @@ export class SmartMovingClient {
     return this.retryRequest(async () => {
       logger.info('Searching SmartMoving by quote number', { quoteNumber })
 
-      // Get all leads and find matching quote number
-      const leads = await this.request<SmartMovingLeadSearchResult[]>('/leads')
+      // Get all leads (paginated response)
+      const response = await this.request<SmartMovingPaginatedResponse<any>>('/leads')
+      const leads = response.pageResults || []
+
+      logger.info('Retrieved leads from SmartMoving', {
+        totalResults: response.totalResults,
+        thisPage: leads.length
+      })
 
       const matchingLead = leads.find(
-        lead => lead.quoteNumber === quoteNumber || lead.id === quoteNumber
+        (lead: any) => lead.quoteNumber === quoteNumber || lead.id === quoteNumber
       )
 
       if (!matchingLead) {
-        logger.info('No opportunity found for quote number', { quoteNumber })
+        logger.warn('No opportunity found for quote number', {
+          quoteNumber,
+          totalLeads: leads.length,
+          sampleQuoteNumbers: leads.slice(0, 5).map((l: any) => l.quoteNumber).filter(Boolean)
+        })
         return null
       }
 
       logger.info('Found matching lead', {
         quoteNumber,
-        opportunityId: matchingLead.id
+        opportunityId: matchingLead.id,
+        customerName: matchingLead.customerName
       })
 
       // Get full opportunity details
