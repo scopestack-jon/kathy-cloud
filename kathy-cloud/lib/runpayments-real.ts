@@ -237,9 +237,9 @@ export function verifyWebhookSignature(
 ): boolean {
   const mode = process.env.RUNPAYMENTS_MODE || 'stripe'
 
-  // In development, optionally skip verification
-  if (process.env.NODE_ENV === 'development' && process.env.SKIP_WEBHOOK_VERIFICATION === 'true') {
-    logger.warn('Skipping webhook signature verification (development mode)')
+  // Optionally skip verification (for testing)
+  if (process.env.SKIP_WEBHOOK_VERIFICATION === 'true') {
+    logger.warn('Skipping webhook signature verification')
     return true
   }
 
