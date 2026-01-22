@@ -110,10 +110,10 @@ async function handlePost(request: NextRequest) {
         opportunityId = opportunityMatch?.[1]
 
         if (smartMovingSettings.apiKey && smartMovingSettings.clientId) {
-          const smartMoving = new SmartMovingClient(
-            smartMovingSettings.apiKey,
-            smartMovingSettings.clientId
-          )
+          const smartMoving = new SmartMovingClient({
+            apiKey: smartMovingSettings.apiKey,
+            clientId: smartMovingSettings.clientId
+          })
 
           let opportunity: any = null
 
@@ -174,23 +174,7 @@ async function handlePost(request: NextRequest) {
             totalAmount: finalAmount
           })
 
-          // Create audit log for SmartMoving fetch
-          await prisma.auditLog.create({
-            data: {
-              organizationId,
-              userId: user?.id || null,
-              action: 'smartmoving_customer_fetch',
-              actor: user?.email || 'extension',
-              metadata: {
-                opportunityId,
-                quoteNumber,
-                customerEmail: customerData.email,
-                estimateAmount: body.amount,
-                processingFee: feeCalc.feeAmount,
-                totalAmount: finalAmount
-              }
-            }
-          })
+          // Note: Audit log will be created after payment session is created
         } else {
           logger.warn('SmartMoving integration: Missing opportunity ID or credentials', {
             hasOpportunityId: !!opportunityId,
@@ -202,22 +186,10 @@ async function handlePost(request: NextRequest) {
         // Non-blocking: log error but continue with payment creation
         logger.error('SmartMoving integration: Error fetching customer data (non-blocking)', {
           error: error instanceof Error ? error.message : String(error),
-          opportunityId
+          opportunityId,
+          sourceUrl: body.sourceUrl
         })
-
-        await prisma.auditLog.create({
-          data: {
-            organizationId,
-            userId: user?.id || null,
-            action: 'smartmoving_customer_fetch_failed',
-            actor: user?.email || 'extension',
-            metadata: {
-              opportunityId,
-              error: error instanceof Error ? error.message : String(error),
-              sourceUrl: body.sourceUrl
-            }
-          }
-        })
+        // Note: Error details will be logged in main payment_initiated audit log
       }
     }
 
