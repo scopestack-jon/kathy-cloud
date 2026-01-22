@@ -159,20 +159,30 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
       jobCount: jobs.length
     })
 
+    // Get webhook data for transaction details
+    const webhookLog = await prisma.auditLog.findFirst({
+      where: {
+        paymentSessionId: paymentSessionId,
+        action: 'webhook_received'
+      },
+      orderBy: { timestamp: 'desc' }
+    })
+
+    const webhookData = webhookLog?.metadata as any
+    const transactionId = webhookData?.raw_event?.data?.transaction?.id?.toString() ||
+                          webhookData?.raw_event?.data?.reference_number?.toString() ||
+                          paymentSession.processorPaymentId
+    const customerName = webhookData?.raw_event?.data?.transaction?.card_details?.name ||
+                         webhookData?.raw_event?.data?.transaction?.customer?.identifier
+
     // Calculate payment details
     const totalPaid = Number(paymentSession.amount)
-    const estimateAmount = totalPaid / (1 + (smartMovingConfig.ccProcessingFeePercent || 2.75) / 100)
-    const processingFee = totalPaid - estimateAmount
 
     // Format payment note
     const paymentNote = formatPaymentNote({
-      estimateAmount,
-      processingFee,
       totalPaid,
-      quoteNumber: quoteNumber || undefined,
-      invoiceId: paymentSession.invoiceId,
-      processorId: paymentSession.processorPaymentId || undefined,
-      customerEmail: customerEmail || 'Unknown',
+      transactionId,
+      customerName,
       timestamp: new Date()
     })
 
@@ -221,8 +231,8 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
       jobCount: jobs.length,
       quoteNumber,
       paymentAmount: totalPaid,
-      estimateAmount,
-      processingFee,
+      transactionId,
+      customerName,
       invoiceId: paymentSession.invoiceId,
       syncDuration
     })

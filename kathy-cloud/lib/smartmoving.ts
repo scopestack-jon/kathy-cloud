@@ -375,27 +375,33 @@ export class SmartMovingClient {
  * Format payment note for SmartMoving accounting notes
  */
 export function formatPaymentNote(params: {
-  estimateAmount: number
-  processingFee: number
   totalPaid: number
-  quoteNumber?: string
-  invoiceId: string
-  processorId?: string
-  customerEmail: string
+  transactionId?: string
+  customerName?: string
   timestamp: Date
 }): string {
-  return `PAYMENT RECEIVED via Kathy
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-Estimate Amount: $${params.estimateAmount.toFixed(2)}
-Processing Fee: $${params.processingFee.toFixed(2)} (2.75%)
-Total Paid: $${params.totalPaid.toFixed(2)}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-${params.quoteNumber ? `Quote #: ${params.quoteNumber}\n` : ''}Invoice: ${params.invoiceId}
-${params.processorId ? `Gateway: ${params.processorId}\n` : ''}Date: ${params.timestamp.toISOString()}
-Customer: ${params.customerEmail}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-Processed via RunPayments integration
-Auto-synced by Kathy Cloud`
+  const date = params.timestamp.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const lines = [
+    `Payment Received: $${params.totalPaid.toFixed(2)}`,
+    `Date: ${date}`,
+  ]
+
+  if (params.transactionId) {
+    lines.push(`Transaction ID: ${params.transactionId}`)
+  }
+
+  if (params.customerName) {
+    lines.push(`Name: ${params.customerName}`)
+  }
+
+  return lines.join('\n')
 }
 
 /**
