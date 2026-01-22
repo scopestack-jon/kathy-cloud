@@ -196,170 +196,62 @@ async function refreshRunPaymentsApiKey(): Promise<string> {
 }
 
 /**
- * RunPayments - Hosted Payment Page (HPP)
- * Creates a hosted payment page via RunPayments HPP API
- * Documentation: https://docs.runpayments.io/reference/payments-api/create-hosted-payment-page
+ * RunPayments - Direct Hosted Payment Page Link
+ * Creates a direct link to RunPayments HPP (no API call needed)
+ * Webhook will notify us when payment completes
  */
 async function createRunPaymentsSession(params: CreatePaymentSessionParams): Promise<PaymentSession> {
   const ccMid = process.env.RUNPAYMENTS_CC_MID
-  const hppApiUrl = process.env.RUNPAYMENTS_HPP_API_URL || 'https://javelin.runpayments.io/api/v1/hpp'
-  let apiKey = process.env.RUNPAYMENTS_API_KEY
-
-  if (!apiKey) {
-    throw new Error('RUNPAYMENTS_API_KEY must be configured')
-  }
+  const captureBaseUrl = process.env.RUNPAYMENTS_CAPTURE_BASE_URL || 'https://pay.sandbox.runpayments-ab.io/capture'
 
   if (!ccMid) {
     throw new Error('RUNPAYMENTS_CC_MID (credit card merchant ID) must be configured')
   }
 
-  logger.info('Creating RunPayments Hosted Payment Page', {
+  logger.info('Creating RunPayments Direct HPP Link', {
     invoiceId: params.invoiceId,
     amount: params.amount,
-    hppApiUrl,
-    hasApiKey: !!apiKey,
+    captureBaseUrl,
     hasCcMid: !!ccMid
   })
 
-  // Helper function to attempt HPP creation
-  const attemptHppCreation = async (token: string): Promise<Response> => {
-    // Build hpp_options array for customer-facing fields
-    const hppOptions: Array<{ name: string; value: string; is_readonly?: boolean; is_required?: boolean }> = []
-    
-    // Add clean invoice number for display
-    hppOptions.push({
-      name: 'invoice_id',
-      value: params.originalInvoiceId || params.invoiceId,
-      is_readonly: true
-    })
-    
-    // Add customer prefill data if provided
-    if (params.customerName) {
-      hppOptions.push({
-        name: 'name_on_account',
-        value: params.customerName
-      })
-    }
-    
-    if (params.customerEmail) {
-      hppOptions.push({
-        name: 'email',
-        value: params.customerEmail
-      })
-    }
-    
-    if (params.customerPhone) {
-      hppOptions.push({
-        name: 'phone',
-        value: params.customerPhone
-      })
-    }
-    
-    if (params.customerAddress?.street) {
-      hppOptions.push({
-        name: 'address',
-        value: params.customerAddress.street
-      })
-    }
-    
-    // Create HPP via API
-    const requestBody = {
-      name: params.description || `Invoice ${params.invoiceId}`,
-      cc_mid: ccMid.trim(),
-      amount: params.amount.toFixed(2),
-      lock_amount: true,
-      disable_after_payment: true,
-      name_on_account: params.customerName || '',
-      // Add tracking fields as root-level custom fields (hidden from UI)
-      custom_01: params.invoiceId, // Compound invoice ID for webhook matching
-      custom_02: params.paymentSessionId, // Payment session ID
-      custom_03: 'kathy', // Source identifier
-      hpp_options: hppOptions
-    }
-    
-    logger.info('Sending HPP API request', {
-      url: hppApiUrl,
-      bodyPreview: {
-        name: requestBody.name,
-        cc_mid: requestBody.cc_mid,
-        amount: requestBody.amount,
-        hpp_options_count: hppOptions.length
-      }
-    })
-    
-    return await fetch(hppApiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token.trim()}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    })
+  // Build direct HPP URL with query parameters
+  // The HPP will handle the payment and send webhook when complete
+  const hppUrl = new URL(captureBaseUrl)
+  hppUrl.searchParams.set('cc_mid', ccMid)
+  hppUrl.searchParams.set('amount', params.amount.toFixed(2))
+  hppUrl.searchParams.set('invoice_number', params.originalInvoiceId || params.invoiceId)
+
+  // Add tracking fields for webhook matching
+  hppUrl.searchParams.set('custom_01', params.invoiceId) // Compound invoice ID
+  hppUrl.searchParams.set('custom_02', params.paymentSessionId) // Payment session ID
+  hppUrl.searchParams.set('custom_03', 'kathy') // Source identifier
+
+  // Add customer prefill if available
+  if (params.customerName) {
+    hppUrl.searchParams.set('name_on_account', params.customerName)
+  }
+  if (params.customerEmail) {
+    hppUrl.searchParams.set('email', params.customerEmail)
+  }
+  if (params.customerPhone) {
+    hppUrl.searchParams.set('phone', params.customerPhone)
   }
 
-  try {
-    // First attempt with current API key
-    let response = await attemptHppCreation(apiKey)
+  const paymentUrl = hppUrl.toString()
 
-    // If 401 Unauthorized, try refreshing the API key and retry
-    if (response.status === 401) {
-      logger.info('Got 401, attempting to refresh API key')
-      
-      try {
-        const newApiKey = await refreshRunPaymentsApiKey()
-        logger.info('Retrying HPP creation with refreshed API key')
-        response = await attemptHppCreation(newApiKey)
-      } catch (refreshError) {
-        logger.error('Failed to refresh API key', refreshError)
-        // Continue with original 401 error handling below
-      }
-    }
+  logger.info('RunPayments Direct HPP URL created', {
+    invoiceId: params.invoiceId,
+    amount: params.amount,
+    urlPreview: paymentUrl.substring(0, 100) + '...'
+  })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      logger.error('RunPayments HPP API error', { 
-        status: response.status, 
-        statusText: response.statusText,
-        error: errorText,
-        requestBody: {
-          name: params.description || `Invoice ${params.invoiceId}`,
-          cc_mid: ccMid.trim(),
-          amount: params.amount.toFixed(2),
-          hasApiKey: !!apiKey,
-          hppApiUrl
-        }
-      })
-      throw new Error(`RunPayments HPP API error: ${response.status} - ${errorText}`)
-    }
-
-    const hppResponse = await response.json()
-    
-    if (!hppResponse.url) {
-      logger.error('No URL in HPP response', { response: hppResponse })
-      throw new Error('RunPayments HPP API did not return a URL')
-    }
-
-    logger.info('RunPayments HPP created successfully', { 
-      invoiceId: params.invoiceId,
-      amount: params.amount,
-      hppUrl: hppResponse.url.substring(0, 100) + '...'
-    })
-
-    return {
-      id: params.paymentSessionId,
-      amount: params.amount,
-      currency: params.currency,
-      paymentUrl: hppResponse.url,
-      status: 'pending'
-    }
-  } catch (error) {
-    logger.error('Error creating RunPayments HPP', {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      invoiceId: params.invoiceId,
-      amount: params.amount
-    })
-    throw error
+  return {
+    id: params.paymentSessionId,
+    amount: params.amount,
+    currency: params.currency,
+    paymentUrl: paymentUrl,
+    status: 'pending'
   }
 }
 
