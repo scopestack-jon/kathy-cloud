@@ -184,6 +184,13 @@ export default function DashboardPage() {
             >
               SmartMoving
             </button>
+
+            <button
+              onClick={() => window.location.href = '/dashboard/test-payments'}
+              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium"
+            >
+              Test Payments
+            </button>
           </div>
         </div>
 
