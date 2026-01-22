@@ -101,13 +101,26 @@ async function handlePost(request: NextRequest) {
         logger.info('SmartMoving integration: Detected SmartMoving request', {
           sourceUrl: body.sourceUrl,
           hasApiKey: !!smartMovingSettings.apiKey,
-          hasClientId: !!smartMovingSettings.clientId
+          hasClientId: !!smartMovingSettings.clientId,
+          hasSmartMovingMetadata: !!(body as any).smartMovingMetadata
         })
 
-        // Extract opportunity ID from SmartMoving URL
-        // Format: https://app.smartmoving.com/opportunities/{opportunityId}/...
-        const opportunityMatch = body.sourceUrl?.match(/\/opportunities\/([^\/]+)/)
-        opportunityId = opportunityMatch?.[1]
+        // Extract opportunity ID from:
+        // 1. SmartMoving metadata passed from extension (preferred)
+        // 2. SmartMoving URL as fallback
+        opportunityId = (body as any).smartMovingMetadata?.opportunityId
+
+        if (!opportunityId) {
+          // Fallback: Extract from URL
+          // Format: https://app.smartmoving.com/opportunities/{opportunityId}/...
+          const opportunityMatch = body.sourceUrl?.match(/\/opportunities\/([^\/]+)/)
+          opportunityId = opportunityMatch?.[1]
+        }
+
+        logger.info('SmartMoving integration: Opportunity ID extracted', {
+          opportunityId,
+          source: (body as any).smartMovingMetadata?.opportunityId ? 'metadata' : 'url'
+        })
 
         if (smartMovingSettings.apiKey && smartMovingSettings.clientId) {
           const smartMoving = new SmartMovingClient({
@@ -292,11 +305,14 @@ async function handlePost(request: NextRequest) {
     })
 
     // Create audit log with user tracking
+    // Use special action name for SmartMoving to enable automatic sync
+    const auditAction = opportunityId ? 'payment_initiated_from_smartmoving' : 'payment_initiated'
+
     await prisma.auditLog.create({
       data: {
         paymentSessionId: paymentSession.id,
         userId: user?.id || null,
-        action: 'payment_initiated',
+        action: auditAction,
         actor: user?.email || body.userId || 'extension',
         metadata: {
           invoiceId: body.invoiceId,
@@ -307,7 +323,8 @@ async function handlePost(request: NextRequest) {
           sourceUrl: body.sourceUrl,
           hasCustomerData: !!customerData,
           opportunityId,
-          quoteNumber
+          quoteNumber,
+          customerEmail: customerData?.email
         }
       }
     })

@@ -568,13 +568,17 @@ function setupObservers() {
 async function init() {
   kathyLog("SmartMoving extension loaded")
 
-  // Initial injection
-  setTimeout(() => {
-    injectButton()
-  }, 1000)
+  // DISABLED: Now using universal Collect Payment button instead
+  // The universal content script will detect SmartMoving and extract
+  // opportunity data automatically when creating payments
 
-  // Setup observers
-  setupObservers()
+  // // Initial injection
+  // setTimeout(() => {
+  //   injectButton()
+  // }, 1000)
+
+  // // Setup observers
+  // setupObservers()
 }
 
 // Start when DOM is ready

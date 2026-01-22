@@ -489,11 +489,42 @@ class UniversalKathyInjector {
   }
 }
 
+// SmartMoving Detection Helpers
+function isSmartMovingPage(): boolean {
+  return window.location.hostname === 'app.smartmoving.com'
+}
+
+function extractSmartMovingOpportunityId(): string | null {
+  // SmartMoving opportunity URLs: https://app.smartmoving.com/opportunities/{opportunityId}/...
+  const match = window.location.pathname.match(/\/opportunities\/([^\/]+)/)
+  return match ? match[1] : null
+}
+
+function isSmartMovingEstimatePage(): boolean {
+  const path = window.location.pathname
+  return path.includes('/opportunities/') && (
+    path.includes('/sales') ||
+    path.includes('/estimate') ||
+    path.includes('/quote')
+  )
+}
+
 // API Helper Functions
 async function createPaymentSession(invoiceId: string, amount: number, applicationName: string, applicationConfigId: string) {
   const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
-  
+
   try {
+    // Detect SmartMoving context
+    const smartMovingMetadata: any = {}
+    if (isSmartMovingPage()) {
+      const opportunityId = extractSmartMovingOpportunityId()
+      if (opportunityId && isSmartMovingEstimatePage()) {
+        smartMovingMetadata.opportunityId = opportunityId
+        smartMovingMetadata.quoteNumber = invoiceId
+        console.log('Kathy: Detected SmartMoving opportunity', { opportunityId, quoteNumber: invoiceId })
+      }
+    }
+
     const response = await authenticatedFetch(`${API_URL}/api/payments`, {
       method: 'POST',
       headers: {
@@ -505,7 +536,8 @@ async function createPaymentSession(invoiceId: string, amount: number, applicati
         currency: 'USD',
         applicationName,
         applicationConfigId,
-        sourceUrl: window.location.href
+        sourceUrl: window.location.href,
+        smartMovingMetadata: Object.keys(smartMovingMetadata).length > 0 ? smartMovingMetadata : undefined
       })
     })
 
