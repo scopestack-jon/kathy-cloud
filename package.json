@@ -5,9 +5,8 @@
   "displayName": "Kathy",
   "scripts": {
     "dev": "plasmo dev",
-    "build": "cd kathy-cloud && npm install && npm run build",
-    "package": "plasmo package",
-    "build:extension": "plasmo build"
+    "build": "plasmo build",
+    "package": "plasmo package"
   },
   "keywords": [],
   "author": "",
