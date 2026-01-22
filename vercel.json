@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "devCommand": "cd kathy-cloud && npm run dev",
+  "outputDirectory": "kathy-cloud/.next"
+}
