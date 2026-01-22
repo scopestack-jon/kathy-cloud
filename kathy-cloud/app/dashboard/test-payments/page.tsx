@@ -1,6 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { getSupabaseBrowserClient } from '@/lib/supabase-client'
+
+const supabase = getSupabaseBrowserClient()
 
 interface PaymentSession {
   id: string
@@ -23,7 +26,18 @@ export default function TestPaymentsPage() {
 
   const loadPayments = async () => {
     try {
-      const response = await fetch('/api/payments/sessions')
+      // Get authentication token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.error('No active session')
+        return
+      }
+
+      const response = await fetch('/api/payments/sessions', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
       if (response.ok) {
         const data = await response.json()
         setPayments(data.sessions || [])
