@@ -197,54 +197,25 @@ async function refreshRunPaymentsApiKey(): Promise<string> {
 
 /**
  * RunPayments - Direct Hosted Payment Page Link
- * Creates a direct link to RunPayments HPP (no API call needed)
+ * Opens the HPP directly for manual entry
  * Webhook will notify us when payment completes
  */
 async function createRunPaymentsSession(params: CreatePaymentSessionParams): Promise<PaymentSession> {
-  const ccMid = process.env.RUNPAYMENTS_CC_MID?.trim()
   const captureBaseUrl = (process.env.RUNPAYMENTS_CAPTURE_BASE_URL || 'https://pay.sandbox.runpayments-ab.io/capture').trim()
-
-  if (!ccMid) {
-    throw new Error('RUNPAYMENTS_CC_MID (credit card merchant ID) must be configured')
-  }
 
   logger.info('Creating RunPayments Direct HPP Link', {
     invoiceId: params.invoiceId,
     amount: params.amount,
-    captureBaseUrl,
-    ccMid: ccMid.substring(0, 10) + '...',
-    hasCcMid: !!ccMid
+    captureBaseUrl
   })
 
-  // Build direct HPP URL with query parameters
-  // The HPP will handle the payment and send webhook when complete
-  const hppUrl = new URL(captureBaseUrl)
-  hppUrl.searchParams.set('cc_mid', ccMid.trim())
-  hppUrl.searchParams.set('amount', params.amount.toFixed(2))
-  hppUrl.searchParams.set('invoice_number', params.originalInvoiceId || params.invoiceId)
-
-  // Add tracking fields for webhook matching
-  hppUrl.searchParams.set('custom_01', params.invoiceId) // Compound invoice ID
-  hppUrl.searchParams.set('custom_02', params.paymentSessionId) // Payment session ID
-  hppUrl.searchParams.set('custom_03', 'kathy') // Source identifier
-
-  // Add customer prefill if available
-  if (params.customerName) {
-    hppUrl.searchParams.set('name_on_account', params.customerName)
-  }
-  if (params.customerEmail) {
-    hppUrl.searchParams.set('email', params.customerEmail)
-  }
-  if (params.customerPhone) {
-    hppUrl.searchParams.set('phone', params.customerPhone)
-  }
-
-  const paymentUrl = hppUrl.toString()
+  // Return the bare HPP URL - user will manually enter all payment details
+  const paymentUrl = captureBaseUrl
 
   logger.info('RunPayments Direct HPP URL created', {
     invoiceId: params.invoiceId,
     amount: params.amount,
-    urlPreview: paymentUrl.substring(0, 100) + '...'
+    paymentUrl
   })
 
   return {
