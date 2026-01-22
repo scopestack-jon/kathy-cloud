@@ -39,6 +39,7 @@ export default function SmartMovingPage() {
   const [testLoading, setTestLoading] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
   const [auditLogs, setAuditLogs] = useState<any[]>([])
+  const [saveMessage, setSaveMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
 
   useEffect(() => {
     loadOrganization()
@@ -126,19 +127,29 @@ export default function SmartMovingPage() {
   }
 
   async function saveConfig() {
-    if (!organization) return
+    if (!organization) {
+      setSaveMessage({ type: 'error', text: 'Organization not loaded' })
+      return
+    }
 
     try {
       setSaving(true)
+      setSaveMessage(null)
 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        router.push('/auth/login')
+        setSaveMessage({ type: 'error', text: 'Session expired. Please log in again.' })
+        setTimeout(() => router.push('/auth/login'), 2000)
         return
       }
 
-      // Update organization settings via direct SQL
-      // Note: This is a simplified approach - in production you'd have a proper API endpoint
+      console.log('Saving SmartMoving config:', {
+        organizationId: organization.id,
+        enabled: config.enabled,
+        hasApiKey: !!config.apiKey,
+        hasClientId: !!config.clientId
+      })
+
       const response = await fetch('/api/organizations/update-settings', {
         method: 'POST',
         headers: {
@@ -154,16 +165,20 @@ export default function SmartMovingPage() {
         })
       })
 
+      console.log('Save response status:', response.status)
+
       if (response.ok) {
-        alert('SmartMoving configuration saved successfully!')
+        setSaveMessage({ type: 'success', text: 'SmartMoving configuration saved successfully!' })
+        setTimeout(() => setSaveMessage(null), 5000)
         loadOrganization()
       } else {
         const error = await response.json()
-        alert(`Failed to save: ${error.error || 'Unknown error'}`)
+        console.error('Save failed:', error)
+        setSaveMessage({ type: 'error', text: `Failed to save: ${error.error || error.details || 'Unknown error'}` })
       }
     } catch (error) {
       console.error('Error saving config:', error)
-      alert('Failed to save configuration')
+      setSaveMessage({ type: 'error', text: `Error: ${error instanceof Error ? error.message : 'Failed to save configuration'}` })
     } finally {
       setSaving(false)
     }
@@ -329,6 +344,16 @@ export default function SmartMovingPage() {
               </select>
               <p className="text-xs text-gray-500 mt-1">Category used when confirming jobs</p>
             </div>
+
+            {/* Save Message */}
+            {saveMessage && (
+              <div className={`p-4 rounded-lg ${saveMessage.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                <div className={`text-sm font-medium ${saveMessage.type === 'success' ? 'text-green-800' : 'text-red-800'}`}>
+                  {saveMessage.type === 'success' ? '✅ ' : '❌ '}
+                  {saveMessage.text}
+                </div>
+              </div>
+            )}
 
             {/* Save Button */}
             <div className="pt-4">
