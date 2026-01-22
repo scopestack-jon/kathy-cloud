@@ -96,7 +96,10 @@ model PaymentSession {
   // Legacy fields (will be migrated)
   practicePantherInvoiceUrl String?      @map("practice_panther_invoice_url")
   firmId                   String?       @map("firm_id")
-  
+
+  // Application-specific metadata (JSON)
+  metadata                 Json?         @db.JsonB
+
   createdAt                DateTime      @default(now()) @map("created_at")
   updatedAt                DateTime      @updatedAt @map("updated_at")
   
