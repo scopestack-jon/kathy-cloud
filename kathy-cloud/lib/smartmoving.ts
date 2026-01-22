@@ -212,6 +212,38 @@ export class SmartMovingClient {
   }
 
   /**
+   * Search for opportunity by quote number
+   * The invoice ID in Kathy often corresponds to the SmartMoving quote number
+   */
+  async searchOpportunityByQuoteNumber(
+    quoteNumber: string
+  ): Promise<SmartMovingOpportunity | null> {
+    return this.retryRequest(async () => {
+      logger.info('Searching SmartMoving by quote number', { quoteNumber })
+
+      // Get all leads and find matching quote number
+      const leads = await this.request<SmartMovingLeadSearchResult[]>('/leads')
+
+      const matchingLead = leads.find(
+        lead => lead.quoteNumber === quoteNumber || lead.id === quoteNumber
+      )
+
+      if (!matchingLead) {
+        logger.info('No opportunity found for quote number', { quoteNumber })
+        return null
+      }
+
+      logger.info('Found matching lead', {
+        quoteNumber,
+        opportunityId: matchingLead.id
+      })
+
+      // Get full opportunity details
+      return await this.getOpportunity(matchingLead.id)
+    })
+  }
+
+  /**
    * Get jobs for an opportunity
    * GET /api/opportunities/{opportunityId}/jobs
    */

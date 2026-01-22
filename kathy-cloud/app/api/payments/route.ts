@@ -109,15 +109,46 @@ async function handlePost(request: NextRequest) {
         const opportunityMatch = body.sourceUrl?.match(/\/opportunities\/([^\/]+)/)
         opportunityId = opportunityMatch?.[1]
 
-        if (opportunityId && smartMovingSettings.apiKey && smartMovingSettings.clientId) {
+        if (smartMovingSettings.apiKey && smartMovingSettings.clientId) {
           const smartMoving = new SmartMovingClient(
             smartMovingSettings.apiKey,
             smartMovingSettings.clientId
           )
 
-          logger.info('SmartMoving integration: Fetching opportunity', { opportunityId })
+          let opportunity: any = null
 
-          const opportunity = await smartMoving.getOpportunity(opportunityId)
+          if (opportunityId) {
+            // Try fetching by opportunity ID from URL
+            logger.info('SmartMoving integration: Fetching opportunity by ID', { opportunityId })
+            try {
+              opportunity = await smartMoving.getOpportunity(opportunityId)
+            } catch (error) {
+              logger.warn('Could not fetch opportunity by ID, will try by quote number', {
+                opportunityId,
+                error: error instanceof Error ? error.message : String(error)
+              })
+            }
+          }
+
+          if (!opportunity && body.invoiceId) {
+            // Fallback: Search by quote number (invoice ID)
+            logger.info('SmartMoving integration: Searching by quote number', {
+              quoteNumber: body.invoiceId
+            })
+            opportunity = await smartMoving.searchOpportunityByQuoteNumber(body.invoiceId)
+          }
+
+          if (!opportunity) {
+            throw new Error('Could not find SmartMoving opportunity')
+          }
+
+          logger.info('SmartMoving integration: Opportunity found', {
+            opportunityId: opportunity.id,
+            quoteNumber: opportunity.quoteNumber
+          })
+
+          // Update opportunityId with the actual ID
+          opportunityId = opportunity.id
 
           // Extract customer data
           customerData = {
