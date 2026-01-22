@@ -4,6 +4,7 @@ import logger from '@/lib/logger'
 import { createPaymentSession } from '@/lib/runpayments-real'
 import { withAuth } from '@/lib/auth'
 import type { CreatePaymentRequest, CreatePaymentResponse } from '@/lib/types'
+import { SmartMovingClient, calculateProcessingFee } from '@/lib/smartmoving'
 
 // CORS headers for cross-origin requests from extension
 const corsHeaders = {
@@ -52,19 +53,162 @@ async function handlePost(request: NextRequest) {
       )
     }
 
-    // Get organization name for display
+    // Get organization with settings and application config
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { name: true }
+      select: { name: true, settings: true }
     })
+
+    // Get application config to determine which integration to use
+    const appConfig = body.applicationConfigId
+      ? await prisma.applicationConfig.findUnique({
+          where: { id: body.applicationConfigId }
+        })
+      : null
+
+    // =====================================================================
+    // APPLICATION-SPECIFIC INTEGRATIONS
+    // =====================================================================
+    // This section handles automatic customer data pre-fill and processing
+    // fee calculation for supported applications. Each organization can have
+    // multiple application configs (e.g., SmartMoving + Practice Panther),
+    // and each will trigger the appropriate integration based on the
+    // applicationName or sourceUrl.
+    //
+    // To add a new application integration:
+    // 1. Add settings to organization.settings (e.g., organization.settings.myApp)
+    // 2. Check applicationName or sourceUrl to detect the application
+    // 3. Fetch customer data from the application's API
+    // 4. Calculate final amount with any processing fees
+    // 5. Store integration metadata in paymentSession.metadata
+    // =====================================================================
+
+    let customerData: { name?: string; email?: string; phone?: string } | undefined
+    let finalAmount = body.amount
+    let opportunityId: string | undefined
+    let quoteNumber: string | undefined
+
+    // ---------------------------------------------------------------------
+    // SMARTMOVING INTEGRATION
+    // ---------------------------------------------------------------------
+    const smartMovingSettings = organization?.settings?.['smartMoving']
+    const isSmartMovingApp = appConfig?.applicationName === 'SmartMoving' ||
+                             body.applicationName === 'SmartMoving' ||
+                             body.sourceUrl?.includes('smartmoving.com')
+
+    if (isSmartMovingApp && smartMovingSettings?.enabled) {
+      try {
+        logger.info('SmartMoving integration: Detected SmartMoving request', {
+          sourceUrl: body.sourceUrl,
+          hasApiKey: !!smartMovingSettings.apiKey,
+          hasClientId: !!smartMovingSettings.clientId
+        })
+
+        // Extract opportunity ID from SmartMoving URL
+        // Format: https://app.smartmoving.com/opportunities/{opportunityId}/...
+        const opportunityMatch = body.sourceUrl?.match(/\/opportunities\/([^\/]+)/)
+        opportunityId = opportunityMatch?.[1]
+
+        if (opportunityId && smartMovingSettings.apiKey && smartMovingSettings.clientId) {
+          const smartMoving = new SmartMovingClient(
+            smartMovingSettings.apiKey,
+            smartMovingSettings.clientId
+          )
+
+          logger.info('SmartMoving integration: Fetching opportunity', { opportunityId })
+
+          const opportunity = await smartMoving.getOpportunity(opportunityId)
+
+          // Extract customer data
+          customerData = {
+            name: opportunity.customer?.name || undefined,
+            email: opportunity.customer?.emailAddress || undefined,
+            phone: opportunity.customer?.phoneNumber || undefined
+          }
+
+          quoteNumber = opportunity.quoteNumber
+
+          // Calculate total with processing fee
+          const feePercent = smartMovingSettings.ccProcessingFeePercent || 2.75
+          const feeCalc = calculateProcessingFee(body.amount, feePercent)
+          finalAmount = feeCalc.totalAmount
+
+          logger.info('SmartMoving integration: Customer data fetched', {
+            opportunityId,
+            quoteNumber,
+            customerName: customerData.name,
+            customerEmail: customerData.email,
+            estimateAmount: body.amount,
+            processingFee: feeCalc.feeAmount,
+            totalAmount: finalAmount
+          })
+
+          // Create audit log for SmartMoving fetch
+          await prisma.auditLog.create({
+            data: {
+              organizationId,
+              userId: user?.id || null,
+              action: 'smartmoving_customer_fetch',
+              actor: user?.email || 'extension',
+              metadata: {
+                opportunityId,
+                quoteNumber,
+                customerEmail: customerData.email,
+                estimateAmount: body.amount,
+                processingFee: feeCalc.feeAmount,
+                totalAmount: finalAmount
+              }
+            }
+          })
+        } else {
+          logger.warn('SmartMoving integration: Missing opportunity ID or credentials', {
+            hasOpportunityId: !!opportunityId,
+            hasApiKey: !!smartMovingSettings.apiKey,
+            hasClientId: !!smartMovingSettings.clientId
+          })
+        }
+      } catch (error) {
+        // Non-blocking: log error but continue with payment creation
+        logger.error('SmartMoving integration: Error fetching customer data (non-blocking)', {
+          error: error instanceof Error ? error.message : String(error),
+          opportunityId
+        })
+
+        await prisma.auditLog.create({
+          data: {
+            organizationId,
+            userId: user?.id || null,
+            action: 'smartmoving_customer_fetch_failed',
+            actor: user?.email || 'extension',
+            metadata: {
+              opportunityId,
+              error: error instanceof Error ? error.message : String(error),
+              sourceUrl: body.sourceUrl
+            }
+          }
+        })
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // ADD MORE APPLICATION INTEGRATIONS HERE
+    // Example:
+    // const practicePantherSettings = organization?.settings?.['practicePanther']
+    // const isPracticePantherApp = appConfig?.applicationName === 'Practice Panther' || ...
+    // if (isPracticePantherApp && practicePantherSettings?.enabled) { ... }
+    // ---------------------------------------------------------------------
 
     logger.info('Creating payment session', {
       invoiceId: body.invoiceId,
-      amount: body.amount,
+      amount: finalAmount,
+      originalAmount: body.amount,
       organizationId,
       organizationName: organization?.name,
       applicationName: body.applicationName,
-      applicationConfigId: body.applicationConfigId
+      applicationConfigId: body.applicationConfigId,
+      hasCustomerData: !!customerData,
+      opportunityId,
+      quoteNumber
     })
 
     // Create payment session in database with application tracking
@@ -75,10 +219,19 @@ async function handlePost(request: NextRequest) {
         applicationConfigId: body.applicationConfigId,
         applicationName: body.applicationName || 'Practice Panther',
         invoiceId: body.invoiceId,
-        amount: body.amount,
+        amount: finalAmount, // Use final amount (includes processing fee if SmartMoving)
         currency: body.currency || 'USD',
         status: 'initiated',
         sourceUrl: body.sourceUrl,
+        metadata: opportunityId ? {
+          smartMoving: {
+            opportunityId,
+            quoteNumber,
+            estimateAmount: body.amount,
+            processingFeeAmount: finalAmount - body.amount,
+            customerEmail: customerData?.email
+          }
+        } : undefined,
         // Legacy fields for backward compatibility
         practicePantherInvoiceUrl: body.practicePantherInvoiceUrl,
         firmId: organization?.name || body.firmId
@@ -111,12 +264,18 @@ async function handlePost(request: NextRequest) {
     })
     
     const runPaymentsSession = await createPaymentSession({
-      amount: body.amount,
+      amount: finalAmount, // Use final amount (includes processing fee if applicable)
       currency: body.currency || 'USD',
       invoiceId: compoundInvoiceId, // Use compound ID for multi-tenant isolation
       originalInvoiceId: body.invoiceId, // Original invoice ID for display
       paymentSessionId: paymentSession.id,
-      description: `Invoice ${body.invoiceId} - ${organization?.name || body.applicationName || 'Payment'}`
+      description: quoteNumber
+        ? `Quote #${quoteNumber} - ${organization?.name || body.applicationName || 'Payment'}`
+        : `Invoice ${body.invoiceId} - ${organization?.name || body.applicationName || 'Payment'}`,
+      // Pre-fill customer data if available from integration
+      customerName: customerData?.name,
+      customerEmail: customerData?.email,
+      customerPhone: customerData?.phone
     })
 
     // Update payment session with processor details
@@ -138,10 +297,14 @@ async function handlePost(request: NextRequest) {
         actor: user?.email || body.userId || 'extension',
         metadata: {
           invoiceId: body.invoiceId,
-          amount: body.amount,
+          amount: finalAmount,
+          originalAmount: body.amount !== finalAmount ? body.amount : undefined,
           currency: body.currency || 'USD',
           applicationName: body.applicationName,
-          sourceUrl: body.sourceUrl
+          sourceUrl: body.sourceUrl,
+          hasCustomerData: !!customerData,
+          opportunityId,
+          quoteNumber
         }
       }
     })
