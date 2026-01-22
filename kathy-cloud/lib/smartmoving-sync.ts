@@ -178,6 +178,7 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
 
     // Update all jobs with payment notes and confirm
     const jobIds: string[] = []
+    const jobErrors: { jobId: string; error: string }[] = []
     const confirmCategory = smartMovingConfig.confirmCategory || 'deposit'
 
     for (const job of jobs) {
@@ -198,21 +199,25 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
           confirmCategory
         })
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
         logger.error('Error updating SmartMoving job', {
           opportunityId,
           jobId: job.id,
-          error: error instanceof Error ? error.message : String(error)
+          error: errorMessage
         })
+        jobErrors.push({ jobId: job.id, error: errorMessage })
         // Continue with other jobs even if one fails
       }
     }
 
     const syncDuration = Date.now() - syncStartTime
 
-    // Create success audit log
-    await createAuditLog(paymentSessionId, 'smartmoving_sync_success', {
+    // Create audit log (success or partial failure)
+    const auditAction = jobErrors.length > 0 ? 'smartmoving_sync_partial' : 'smartmoving_sync_success'
+    await createAuditLog(paymentSessionId, auditAction, {
       opportunityId,
       jobIds,
+      jobErrors: jobErrors.length > 0 ? jobErrors : undefined,
       jobCount: jobs.length,
       quoteNumber,
       paymentAmount: totalPaid,
