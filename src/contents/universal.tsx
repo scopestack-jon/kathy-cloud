@@ -165,15 +165,18 @@ class UniversalKathyInjector {
         
         const invoiceId = this.extractInvoiceId(invoiceIdCell.textContent || '', config.invoiceIdPattern)
         const amount = this.extractAmount(amountCell.textContent || '', config.amountPattern)
-        
+
+        // Extract opportunity ID from any link in the row (for SmartMoving)
+        const opportunityId = this.extractOpportunityIdFromRow(row)
+
         if (invoiceId && amount) {
-          this.injectBadge(statusCell, { invoiceId, amount, row })
+          this.injectBadge(statusCell, { invoiceId, amount, row, opportunityId })
         }
       })
     })
   }
 
-  private async injectBadge(cell: HTMLTableCellElement, data: { invoiceId: string, amount: number, row: Element }) {
+  private async injectBadge(cell: HTMLTableCellElement, data: { invoiceId: string, amount: number, row: Element, opportunityId?: string | null }) {
     // Check if badge already exists
     const existingBadge = cell.querySelector('[data-kathy-badge]')
     if (existingBadge) return
@@ -184,6 +187,9 @@ class UniversalKathyInjector {
     const badge = document.createElement('span')
     badge.setAttribute('data-kathy-badge', 'true')
     badge.setAttribute('data-invoice-id', data.invoiceId) // Add invoice ID for later reference
+    if (data.opportunityId) {
+      badge.setAttribute('data-opportunity-id', data.opportunityId) // SmartMoving opportunity ID
+    }
     
     if (isPaid) {
       // Inject as "Paid" badge
@@ -242,7 +248,7 @@ class UniversalKathyInjector {
     
     badge.onclick = async (e) => {
       e.stopPropagation()
-      await this.handleBadgeClick(data)
+      await this.handleBadgeClick({ invoiceId: data.invoiceId, amount: data.amount, opportunityId: data.opportunityId })
     }
     
     cell.appendChild(badge)
@@ -303,7 +309,7 @@ class UniversalKathyInjector {
     console.log('Kathy: Badge updated to Paid state', { invoiceId })
   }
 
-  private async handleBadgeClick(data: { invoiceId: string, amount: number }) {
+  private async handleBadgeClick(data: { invoiceId: string, amount: number, opportunityId?: string | null }) {
     // Check trial status
     if (!this.isAuthenticated) {
       if (this.trialUsage >= 3) {
@@ -322,7 +328,8 @@ class UniversalKathyInjector {
         amount: data.amount,
         applicationName: this.appConfig!.applicationName,
         applicationConfigId: this.appConfig!.id,
-        sourceUrl: window.location.href
+        sourceUrl: window.location.href,
+        opportunityId: data.opportunityId || undefined
       }
     }
 
@@ -472,7 +479,7 @@ class UniversalKathyInjector {
     try {
       const match = text.match(new RegExp(pattern))
       if (!match || !match[1]) return null
-      
+
       const cleaned = match[1].replace(/,/g, '')
       const amount = parseFloat(cleaned)
       return isNaN(amount) ? null : amount
@@ -480,6 +487,23 @@ class UniversalKathyInjector {
       console.error('Kathy: Invalid amount pattern:', pattern, error)
       return null
     }
+  }
+
+  private extractOpportunityIdFromRow(row: Element): string | null {
+    // Look for links containing /opportunities/ in the row
+    const links = row.querySelectorAll('a[href*="/opportunities/"]')
+    for (const link of links) {
+      const href = link.getAttribute('href')
+      if (href) {
+        // Match opportunity ID (UUID format), stopping at ; or /
+        const match = href.match(/\/opportunities\/([a-f0-9-]+)/i)
+        if (match) {
+          console.log('Kathy: Extracted opportunity ID from row:', match[1])
+          return match[1]
+        }
+      }
+    }
+    return null
   }
 
   destroy() {
@@ -510,18 +534,19 @@ function isSmartMovingEstimatePage(): boolean {
 }
 
 // API Helper Functions
-async function createPaymentSession(invoiceId: string, amount: number, applicationName: string, applicationConfigId: string) {
+async function createPaymentSession(invoiceId: string, amount: number, applicationName: string, applicationConfigId: string, opportunityIdFromRow?: string) {
   const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
 
   try {
     // Detect SmartMoving context
     const smartMovingMetadata: any = {}
     if (isSmartMovingPage()) {
-      const opportunityId = extractSmartMovingOpportunityId()
-      if (opportunityId && isSmartMovingEstimatePage()) {
+      // Use opportunity ID from row link first, fall back to URL extraction
+      const opportunityId = opportunityIdFromRow || extractSmartMovingOpportunityId()
+      if (opportunityId) {
         smartMovingMetadata.opportunityId = opportunityId
         smartMovingMetadata.quoteNumber = invoiceId
-        console.log('Kathy: Detected SmartMoving opportunity', { opportunityId, quoteNumber: invoiceId })
+        console.log('Kathy: Using SmartMoving opportunity', { opportunityId, quoteNumber: invoiceId, fromRow: !!opportunityIdFromRow })
       }
     }
 
@@ -641,10 +666,10 @@ async function confirmPayment(paymentSessionId: string) {
 
 // Listen for payment trigger from panel
 document.addEventListener('kathy:start-payment', async (event: any) => {
-  const { invoiceId, amount } = event.detail
+  const { invoiceId, amount, opportunityId } = event.detail
   const API_URL = process.env.PLASMO_PUBLIC_API_URL || 'http://localhost:3000'
-  
-  console.log('Kathy: Payment triggered from panel', { invoiceId, amount })
+
+  console.log('Kathy: Payment triggered from panel', { invoiceId, amount, opportunityId })
   
   try {
     // Get application info from the current page
@@ -669,14 +694,15 @@ document.addEventListener('kathy:start-payment', async (event: any) => {
       throw new Error('No application configuration found for this page')
     }
     
-    console.log('Kathy: Creating payment session', { invoiceId, amount, app: currentApp.applicationName })
-    
+    console.log('Kathy: Creating payment session', { invoiceId, amount, app: currentApp.applicationName, opportunityId })
+
     // Step 1: Create payment session
     const { paymentSessionId, paymentUrl } = await createPaymentSession(
-      invoiceId, 
-      amount, 
+      invoiceId,
+      amount,
       currentApp.applicationName,
-      currentApp.id
+      currentApp.id,
+      opportunityId
     )
     
     console.log('Kathy: Payment session created', { paymentSessionId, paymentUrl })

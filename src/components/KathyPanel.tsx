@@ -170,9 +170,10 @@ const OverviewTab: React.FC<{ entity: PanelEntity }> = ({ entity }) => {
                 onClick={() => {
                   // Trigger payment flow
                   const event = new CustomEvent('kathy:start-payment', {
-                    detail: { 
+                    detail: {
                       invoiceId: entity.id,
-                      amount: entity.data.amount
+                      amount: entity.data.amount,
+                      opportunityId: entity.data.opportunityId
                     }
                   })
                   document.dispatchEvent(event)
