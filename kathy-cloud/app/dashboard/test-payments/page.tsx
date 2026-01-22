@@ -80,8 +80,10 @@ export default function TestPaymentsPage() {
           type: 'success',
           text: `✅ Payment completed! Status: ${data.oldStatus} → ${data.newStatus}. SmartMoving sync triggered.`
         })
-        // Reload payments to show updated status
-        await loadPayments()
+        // Reload payments to show updated status after a brief delay
+        setTimeout(async () => {
+          await loadPayments()
+        }, 500)
       } else {
         setMessage({
           type: 'error',
