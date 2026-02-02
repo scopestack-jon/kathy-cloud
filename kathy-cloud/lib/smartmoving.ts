@@ -412,13 +412,14 @@ export class SmartMovingClient {
   /**
    * Get opportunity details by quote number
    * GET /api/opportunities/quote/{quoteNumber}
+   * Includes charges and job addresses for payment page
    */
   async getOpportunityByQuoteNumber(quoteNumber: string): Promise<SmartMovingPublicQuote> {
     return this.retryRequest(async () => {
       logger.info('Getting SmartMoving opportunity by quote number', { quoteNumber })
 
       const data = await this.request<SmartMovingPublicQuote>(
-        `/opportunities/quote/${quoteNumber}`
+        `/opportunities/quote/${quoteNumber}?IncludeCharges=true&IncludeJobAddresses=true`
       )
 
       logger.info('SmartMoving opportunity retrieved by quote number', {
@@ -426,6 +427,7 @@ export class SmartMovingClient {
         customerName: data.customer?.name,
         depositAmount: data.depositAmount,
         jobCount: data.jobs?.length,
+        hasCharges: data.jobs?.some(j => j.estimatedCharges?.length),
       })
 
       return data
