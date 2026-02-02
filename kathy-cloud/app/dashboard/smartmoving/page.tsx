@@ -12,6 +12,8 @@ interface SmartMovingConfig {
   enabled: boolean
   ccProcessingFeePercent: number
   confirmCategory: string
+  depositFieldNames?: string[]
+  paymentPageEnabled?: boolean
 }
 
 interface Organization {
@@ -33,8 +35,11 @@ export default function SmartMovingPage() {
     clientId: '',
     enabled: false,
     ccProcessingFeePercent: 2.75,
-    confirmCategory: 'deposit'
+    confirmCategory: 'deposit',
+    depositFieldNames: ['Travel Fee', 'Trip Charge'],
+    paymentPageEnabled: true
   })
+  const [depositFieldNamesInput, setDepositFieldNamesInput] = useState('Travel Fee, Trip Charge')
   const [testOpportunityId, setTestOpportunityId] = useState('')
   const [testLoading, setTestLoading] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
@@ -87,7 +92,12 @@ export default function SmartMovingPage() {
       // Set config from organization settings
       if (data.organization?.settings?.smartMoving) {
         console.log('Loading SmartMoving config from settings:', data.organization.settings.smartMoving)
-        setConfig(data.organization.settings.smartMoving)
+        const loadedConfig = data.organization.settings.smartMoving
+        setConfig(loadedConfig)
+        // Update deposit field names input
+        if (loadedConfig.depositFieldNames?.length) {
+          setDepositFieldNamesInput(loadedConfig.depositFieldNames.join(', '))
+        }
       } else {
         console.log('No SmartMoving config found in settings, using defaults')
       }
@@ -356,6 +366,51 @@ export default function SmartMovingPage() {
               </select>
               <p className="text-xs text-gray-500 mt-1">Category used when confirming jobs</p>
             </div>
+
+            {/* Deposit Field Names */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Deposit Field Names</label>
+              <input
+                type="text"
+                value={depositFieldNamesInput}
+                onChange={(e) => {
+                  setDepositFieldNamesInput(e.target.value)
+                  const names = e.target.value.split(',').map(n => n.trim()).filter(Boolean)
+                  setConfig({ ...config, depositFieldNames: names })
+                }}
+                placeholder="Travel Fee, Trip Charge, Fuel Fee"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Comma-separated list of charge names to look for when extracting deposit amount (default: Travel Fee, Trip Charge)</p>
+            </div>
+
+            {/* Payment Page URL */}
+            {organization && config.enabled && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <label className="block text-sm font-medium text-green-800 mb-2">Customer Payment Page URL</label>
+                <p className="text-xs text-green-700 mb-2">Add this link to your SmartMoving email templates. Replace {'{JobNumber}'} with the SmartMoving template variable.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={`${typeof window !== 'undefined' ? window.location.origin : 'https://kathy.app'}/pay/${organization.slug}/{JobNumber}`}
+                    readOnly
+                    className="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${window.location.origin}/pay/${organization.slug}/{JobNumber}`
+                      navigator.clipboard.writeText(url)
+                      alert('Copied to clipboard!')
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-green-600 mt-2">Example: /pay/{organization.slug}/35493-1</p>
+              </div>
+            )}
 
             {/* Save Message */}
             {saveMessage && (

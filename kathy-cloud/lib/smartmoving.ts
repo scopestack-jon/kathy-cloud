@@ -11,6 +11,8 @@ export interface SmartMovingConfig {
   enabled: boolean
   ccProcessingFeePercent?: number
   confirmCategory?: string
+  depositFieldNames?: string[]  // ["Travel Fee", "Trip Charge"] - fields to extract deposit from
+  paymentPageEnabled?: boolean  // Feature flag for customer self-service payment page
 }
 
 export interface SmartMovingCustomer {
@@ -74,6 +76,47 @@ export interface UpdateJobNotesParams {
   accountingNotes?: string
   customerNotes?: string
   crewNotes?: string
+}
+
+// ============================================================================
+// Public Quote API Types (unauthenticated endpoint)
+// ============================================================================
+
+export interface SmartMovingJobCharge {
+  name: string              // e.g., "Travel Fee"
+  totalCost: number
+  chargeType: string
+}
+
+export interface SmartMovingJobFee {
+  feeName: string
+  amount: { estimated: number; quoted: number }
+}
+
+export interface SmartMovingPublicQuoteStop {
+  address: { fullAddress: string }
+  isOrigin: boolean
+  isDestination: boolean
+}
+
+export interface SmartMovingPublicQuoteJob {
+  id: string
+  charges?: SmartMovingJobCharge[]
+  estimatedCharges?: SmartMovingJobCharge[]
+  fees?: SmartMovingJobFee[]
+  stops?: SmartMovingPublicQuoteStop[]
+}
+
+export interface SmartMovingPublicQuote {
+  id: string
+  quoteNumber: number
+  depositAmount: number
+  customer: {
+    name: string
+    emailAddress: string
+    phoneNumber?: string
+  }
+  jobs: SmartMovingPublicQuoteJob[]
 }
 
 // ============================================================================
@@ -365,6 +408,100 @@ export class SmartMovingClient {
       })
     })
   }
+}
+
+// ============================================================================
+// Public Quote API (No Authentication Required)
+// ============================================================================
+
+const PUBLIC_QUOTE_BASE_URL = 'https://smartmoving-prod-api2.azurewebsites.net/api/public'
+
+/**
+ * Fetch quote from SmartMoving public API (no authentication required)
+ * This endpoint is used for customer-facing payment pages
+ */
+export async function getPublicQuote(quoteNumber: string): Promise<SmartMovingPublicQuote> {
+  const url = `${PUBLIC_QUOTE_BASE_URL}/quotes/${quoteNumber}`
+
+  logger.info('Fetching SmartMoving public quote', { quoteNumber, url })
+
+  try {
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error('SmartMoving public API error', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText,
+        quoteNumber,
+      })
+      throw new Error(`SmartMoving public API error: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+
+    logger.info('SmartMoving public quote retrieved', {
+      quoteNumber,
+      customerName: data.customer?.name,
+      depositAmount: data.depositAmount,
+      jobCount: data.jobs?.length,
+    })
+
+    return data as SmartMovingPublicQuote
+  } catch (error) {
+    logger.error('SmartMoving public API request failed', {
+      error: error instanceof Error ? error.message : String(error),
+      quoteNumber,
+    })
+    throw error
+  }
+}
+
+/**
+ * Extract deposit amount from SmartMoving quote
+ * Searches charges/fees for travel fee or falls back to depositAmount
+ */
+export function extractDepositAmount(
+  quote: SmartMovingPublicQuote,
+  fieldNames?: string[]
+): { amount: number; source: string } {
+  const defaults = ['Travel Fee', 'Trip Charge', 'Travel Charge', 'Fuel Fee']
+  const names = fieldNames?.length ? fieldNames : defaults
+
+  // Search charges first (both charges and estimatedCharges arrays)
+  for (const job of quote.jobs || []) {
+    // Check estimatedCharges array
+    const estimatedCharge = job.estimatedCharges?.find(c =>
+      names.some(n => c.name?.toLowerCase().includes(n.toLowerCase()))
+    )
+    if (estimatedCharge?.totalCost && estimatedCharge.totalCost > 0) {
+      return { amount: estimatedCharge.totalCost, source: estimatedCharge.name }
+    }
+
+    // Check charges array
+    const charge = job.charges?.find(c =>
+      names.some(n => c.name?.toLowerCase().includes(n.toLowerCase()))
+    )
+    if (charge?.totalCost && charge.totalCost > 0) {
+      return { amount: charge.totalCost, source: charge.name }
+    }
+
+    // Check fees array
+    const fee = job.fees?.find(f =>
+      names.some(n => f.feeName?.toLowerCase().includes(n.toLowerCase()))
+    )
+    if (fee?.amount?.estimated && fee.amount.estimated > 0) {
+      return { amount: fee.amount.estimated, source: fee.feeName }
+    }
+  }
+
+  // Fallback to depositAmount
+  if (quote.depositAmount && quote.depositAmount > 0) {
+    return { amount: quote.depositAmount, source: 'depositAmount' }
+  }
+
+  return { amount: 0, source: 'none' }
 }
 
 // ============================================================================
