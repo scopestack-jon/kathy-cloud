@@ -14,6 +14,12 @@ interface SmartMovingConfig {
   confirmCategory: string
   depositFieldNames?: string[]
   paymentPageEnabled?: boolean
+  // Payment provider configuration
+  paymentProvider?: 'runpayments' | 'fluidpay'
+  fluidpay?: {
+    apiKey: string
+    environment: 'sandbox' | 'production'
+  }
 }
 
 interface Organization {
@@ -37,7 +43,12 @@ export default function SmartMovingPage() {
     ccProcessingFeePercent: 2.75,
     confirmCategory: 'deposit',
     depositFieldNames: ['Travel Fee', 'Trip Charge'],
-    paymentPageEnabled: true
+    paymentPageEnabled: true,
+    paymentProvider: 'runpayments',
+    fluidpay: {
+      apiKey: '',
+      environment: 'sandbox'
+    }
   })
   const [depositFieldNamesInput, setDepositFieldNamesInput] = useState('Travel Fee, Trip Charge')
   const [testOpportunityId, setTestOpportunityId] = useState('')
@@ -382,6 +393,75 @@ export default function SmartMovingPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
               />
               <p className="text-xs text-gray-500 mt-1">Comma-separated list of charge names to look for when extracting deposit amount (default: Travel Fee, Trip Charge)</p>
+            </div>
+
+            {/* Payment Provider Selection */}
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment Provider</h3>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Provider</label>
+                <select
+                  value={config.paymentProvider || 'runpayments'}
+                  onChange={(e) => setConfig({ ...config, paymentProvider: e.target.value as 'runpayments' | 'fluidpay' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="runpayments">RunPayments (Legacy)</option>
+                  <option value="fluidpay">FluidPay (Recommended)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">FluidPay supports Apple Pay, ACH, and mobile terminals</p>
+              </div>
+
+              {/* FluidPay Configuration */}
+              {config.paymentProvider === 'fluidpay' && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+                  <h4 className="font-medium text-blue-900">FluidPay Configuration</h4>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">FluidPay API Key</label>
+                    <input
+                      type="password"
+                      value={config.fluidpay?.apiKey || ''}
+                      onChange={(e) => setConfig({
+                        ...config,
+                        fluidpay: { ...config.fluidpay, apiKey: e.target.value, environment: config.fluidpay?.environment || 'sandbox' }
+                      })}
+                      placeholder="Enter your FluidPay secret key..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Your FluidPay secret API key (not the public key)</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Environment</label>
+                    <select
+                      value={config.fluidpay?.environment || 'sandbox'}
+                      onChange={(e) => setConfig({
+                        ...config,
+                        fluidpay: { ...config.fluidpay, apiKey: config.fluidpay?.apiKey || '', environment: e.target.value as 'sandbox' | 'production' }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="sandbox">Sandbox (Testing)</option>
+                      <option value="production">Production (Live)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Use Sandbox for testing, Production for live payments</p>
+                  </div>
+
+                  {config.fluidpay?.environment === 'production' && (
+                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <div className="text-sm text-yellow-800">
+                          <strong>Production Mode:</strong> Real payments will be processed. Make sure your FluidPay account is fully configured.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Payment Page URL */}

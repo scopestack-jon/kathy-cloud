@@ -13,6 +13,12 @@ export interface SmartMovingConfig {
   confirmCategory?: string
   depositFieldNames?: string[]  // ["Travel Fee", "Trip Charge"] - fields to extract deposit from
   paymentPageEnabled?: boolean  // Feature flag for customer self-service payment page
+  // Payment provider configuration
+  paymentProvider?: 'runpayments' | 'fluidpay'  // Default: runpayments
+  fluidpay?: {
+    apiKey: string
+    environment: 'sandbox' | 'production'
+  }
 }
 
 export interface SmartMovingCustomer {

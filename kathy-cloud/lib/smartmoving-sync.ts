@@ -63,13 +63,24 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
     // Initialize SmartMoving client
     const smartMoving = new SmartMovingClient(smartMovingConfig)
 
-    // Get opportunity ID from audit log or search by email
+    // Get opportunity ID from various sources
     let opportunityId: string | null = null
     let quoteNumber: string | null = null
     let customerEmail: string | null = null
 
+    // First, try to get quote number from payment session metadata (most reliable for public payment page)
+    const sessionMetadata = paymentSession.metadata as Record<string, unknown> | null
+    if (sessionMetadata?.quoteNumber) {
+      quoteNumber = sessionMetadata.quoteNumber as string
+      customerEmail = sessionMetadata.customerEmail as string | null
+      logger.info('Found quote number from payment session metadata', {
+        quoteNumber,
+        customerEmail
+      })
+    }
+
     // Try to get from audit log (if payment was initiated from SmartMoving)
-    if (paymentSession.auditLogs.length > 0) {
+    if (!quoteNumber && paymentSession.auditLogs.length > 0) {
       const initLog = paymentSession.auditLogs[0]
       const metadata = initLog.metadata as any
       opportunityId = metadata?.opportunityId
@@ -83,20 +94,44 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
       })
     }
 
-    // If no opportunity ID, try to extract customer email from webhook data
+    // If we have a quote number, fetch the opportunity by quote number
+    if (quoteNumber && !opportunityId) {
+      try {
+        const quote = await smartMoving.getOpportunityByQuoteNumber(quoteNumber)
+        if (quote?.id) {
+          opportunityId = quote.id
+          logger.info('Found SmartMoving opportunity by quote number', {
+            quoteNumber,
+            opportunityId
+          })
+        }
+      } catch (error) {
+        logger.warn('Failed to fetch opportunity by quote number', {
+          quoteNumber,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+    }
+
+    // If still no opportunity ID, try to extract customer email from webhook data
     if (!opportunityId) {
-      // Check recent webhook audit logs for customer email
+      // Check recent webhook audit logs for customer email (RunPayments or FluidPay)
       const webhookLog = await prisma.auditLog.findFirst({
         where: {
           paymentSessionId: paymentSessionId,
-          action: 'webhook_received'
+          action: { in: ['webhook_received', 'fluidpay_webhook_received'] }
         },
         orderBy: { timestamp: 'desc' }
       })
 
       if (webhookLog && webhookLog.metadata) {
         const webhookData = webhookLog.metadata as any
+        // Try RunPayments format first
         customerEmail = webhookData.raw_event?.data?.transaction?.transaction_details?.email
+        // Then try FluidPay format
+        if (!customerEmail) {
+          customerEmail = webhookData.raw_event?.data?.billing_address?.email
+        }
       }
 
       if (customerEmail) {
@@ -159,21 +194,29 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
       jobCount: jobs.length
     })
 
-    // Get webhook data for transaction details
+    // Get webhook data for transaction details (supports both RunPayments and FluidPay)
     const webhookLog = await prisma.auditLog.findFirst({
       where: {
         paymentSessionId: paymentSessionId,
-        action: 'webhook_received'
+        action: { in: ['webhook_received', 'fluidpay_webhook_received'] }
       },
       orderBy: { timestamp: 'desc' }
     })
 
     const webhookData = webhookLog?.metadata as any
+    // Try RunPayments format first, then FluidPay
     const transactionId = webhookData?.raw_event?.data?.transaction?.id?.toString() ||
                           webhookData?.raw_event?.data?.reference_number?.toString() ||
+                          webhookData?.transaction_id?.toString() ||  // FluidPay format
+                          webhookData?.raw_event?.data?.id?.toString() ||  // FluidPay raw event
                           paymentSession.processorPaymentId
+
+    // Extract customer name from various sources
     const customerName = webhookData?.raw_event?.data?.transaction?.card_details?.name ||
-                         webhookData?.raw_event?.data?.transaction?.customer?.identifier
+                         webhookData?.raw_event?.data?.transaction?.customer?.identifier ||
+                         webhookData?.customer_name ||  // FluidPay metadata
+                         webhookData?.raw_event?.data?.response?.card?.card_holder ||  // FluidPay card holder
+                         (sessionMetadata?.customerName as string | undefined)
 
     // Calculate payment details
     const totalPaid = Number(paymentSession.amount)

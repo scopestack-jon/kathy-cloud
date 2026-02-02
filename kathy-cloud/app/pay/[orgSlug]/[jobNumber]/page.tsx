@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect, notFound } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import {
   SmartMovingClient,
@@ -6,7 +6,9 @@ import {
   calculateProcessingFee,
   type SmartMovingConfig,
 } from '@/lib/smartmoving'
-import PaymentForm from './PaymentForm'
+import { FluidPayClient } from '@/lib/fluidpay'
+import { createPaymentSession } from '@/lib/runpayments-real'
+import logger from '@/lib/logger'
 
 interface PageProps {
   params: Promise<{
@@ -29,6 +31,10 @@ export async function generateMetadata({ params }: PageProps) {
   }
 }
 
+/**
+ * Payment page that immediately redirects to hosted payment provider
+ * Supports both FluidPay (primary) and RunPayments (legacy)
+ */
 export default async function PaymentPage({ params }: PageProps) {
   const { orgSlug, jobNumber } = await params
 
@@ -79,7 +85,11 @@ export default async function PaymentPage({ params }: PageProps) {
   let quote
   try {
     quote = await smartMovingClient.getOpportunityByQuoteNumber(quoteNumber)
-  } catch {
+  } catch (error) {
+    logger.error('Failed to fetch SmartMoving quote', {
+      quoteNumber,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md text-center">
@@ -124,135 +134,334 @@ export default async function PaymentPage({ params }: PageProps) {
   const feePercent = smartMovingConfig.ccProcessingFeePercent || 2.75
   const feeCalculation = calculateProcessingFee(depositAmount, feePercent)
 
-  // Get origin and destination
-  let origin: string | undefined
-  let destination: string | undefined
+  logger.info('Processing payment page request', {
+    orgSlug,
+    jobNumber,
+    quoteNumber,
+    depositAmount,
+    depositSource,
+    totalAmount: feeCalculation.totalAmount,
+    paymentProvider: smartMovingConfig.paymentProvider || 'runpayments',
+  })
 
-  for (const job of quote.jobs || []) {
-    for (const stop of job.stops || []) {
-      if (stop.isOrigin) {
-        origin = stop.address?.fullAddress
-      }
-      if (stop.isDestination) {
-        destination = stop.address?.fullAddress
-      }
+  // Create invoice ID
+  const invoiceId = `SM-${quoteNumber}-${jobNumber}`
+
+  // Split customer name
+  const customerName = quote.customer?.name || 'Customer'
+  const nameParts = customerName.trim().split(/\s+/)
+  const customerFirstName = nameParts[0] || 'Customer'
+  const customerLastName = nameParts.slice(1).join(' ') || ''
+
+  // Determine payment provider and create payment URL
+  const paymentProvider = smartMovingConfig.paymentProvider || 'runpayments'
+  let paymentUrl: string
+
+  try {
+    if (paymentProvider === 'fluidpay' && smartMovingConfig.fluidpay?.apiKey) {
+      // Use FluidPay Invoice API
+      paymentUrl = await createFluidPayInvoice({
+        organizationId: organization.id,
+        organizationName: organization.name,
+        invoiceId,
+        jobNumber,
+        quoteNumber,
+        depositAmount,
+        depositSource,
+        totalAmountCents: Math.round(feeCalculation.totalAmount * 100),
+        feeCalculation,
+        customerFirstName,
+        customerLastName,
+        customerEmail: quote.customer?.emailAddress || '',
+        customerPhone: quote.customer?.phoneNumber,
+        fluidpayConfig: smartMovingConfig.fluidpay,
+      })
+    } else {
+      // Use RunPayments (legacy)
+      paymentUrl = await createRunPaymentsSession({
+        organizationId: organization.id,
+        organizationName: organization.name,
+        invoiceId,
+        jobNumber,
+        quoteNumber,
+        depositAmount,
+        depositSource,
+        totalAmount: feeCalculation.totalAmount,
+        feeCalculation,
+        customerName,
+        customerEmail: quote.customer?.emailAddress || '',
+        customerPhone: quote.customer?.phoneNumber,
+      })
     }
+  } catch (error) {
+    logger.error('Failed to create payment session', {
+      paymentProvider,
+      quoteNumber,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md text-center">
+          <div className="text-red-500 text-5xl mb-4">!</div>
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">
+            Payment System Error
+          </h1>
+          <p className="text-gray-600">
+            We couldn&apos;t initialize the payment system. Please try again
+            or contact the company directly.
+          </p>
+        </div>
+      </div>
+    )
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-3xl mx-auto px-4 py-6">
-          <h1 className="text-2xl font-bold text-gray-900">{organization.name}</h1>
-          <p className="text-gray-600 mt-1">Secure Deposit Payment</p>
-        </div>
-      </header>
+  // Redirect to hosted payment page
+  redirect(paymentUrl)
+}
 
-      {/* Main content */}
-      <main className="max-w-3xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          {/* Quote summary */}
-          <div className="bg-gray-50 border-b border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Quote #{quote.quoteNumber}
-              </h2>
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-                Deposit Due
-              </span>
-            </div>
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
-            {/* Customer info */}
-            <div className="text-sm text-gray-600 mb-4">
-              <p className="font-medium text-gray-900">{quote.customer?.name}</p>
-              {quote.customer?.emailAddress && (
-                <p>{quote.customer.emailAddress}</p>
-              )}
-            </div>
+interface CreateFluidPayInvoiceParams {
+  organizationId: string
+  organizationName: string
+  invoiceId: string
+  jobNumber: string
+  quoteNumber: string
+  depositAmount: number
+  depositSource: string
+  totalAmountCents: number
+  feeCalculation: {
+    estimateAmount: number
+    feePercent: number
+    feeAmount: number
+    totalAmount: number
+  }
+  customerFirstName: string
+  customerLastName: string
+  customerEmail: string
+  customerPhone?: string
+  fluidpayConfig: {
+    apiKey: string
+    environment: 'sandbox' | 'production'
+  }
+}
 
-            {/* Move details */}
-            {(origin || destination) && (
-              <div className="bg-white rounded-lg p-4 border border-gray-200">
-                <div className="flex items-start gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <div className="w-0.5 h-8 bg-gray-300"></div>
-                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  </div>
-                  <div className="flex-1 space-y-4">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase">From</p>
-                      <p className="text-sm text-gray-900">{origin || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase">To</p>
-                      <p className="text-sm text-gray-900">{destination || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+async function createFluidPayInvoice(params: CreateFluidPayInvoiceParams): Promise<string> {
+  const {
+    organizationId,
+    organizationName,
+    invoiceId,
+    jobNumber,
+    quoteNumber,
+    depositAmount,
+    depositSource,
+    totalAmountCents,
+    feeCalculation,
+    customerFirstName,
+    customerLastName,
+    customerEmail,
+    customerPhone,
+    fluidpayConfig,
+  } = params
 
-          {/* Payment details */}
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Payment Details
-            </h3>
+  // Create payment session in database first
+  const paymentSession = await prisma.paymentSession.create({
+    data: {
+      organizationId,
+      applicationName: 'SmartMoving',
+      invoiceId,
+      amount: feeCalculation.totalAmount,
+      currency: 'USD',
+      status: 'initiated',
+      metadata: {
+        quoteNumber,
+        jobNumber,
+        depositAmount,
+        depositSource,
+        processingFee: feeCalculation.feeAmount,
+        customerName: `${customerFirstName} ${customerLastName}`.trim(),
+        customerEmail,
+        source: 'public_payment_page',
+        paymentProvider: 'fluidpay',
+      },
+    },
+  })
 
-            <div className="space-y-3 mb-6">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">
-                  {depositSource === 'depositAmount' ? 'Deposit' : depositSource}
-                </span>
-                <span className="font-medium">${depositAmount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">
-                  Credit Card Fee ({feePercent}%)
-                </span>
-                <span className="font-medium">
-                  ${feeCalculation.feeAmount.toFixed(2)}
-                </span>
-              </div>
-              <div className="border-t border-gray-200 pt-3 flex justify-between">
-                <span className="text-gray-900 font-semibold">Total Due</span>
-                <span className="text-xl font-bold text-green-600">
-                  ${feeCalculation.totalAmount.toFixed(2)}
-                </span>
-              </div>
-            </div>
+  // Initialize FluidPay client
+  const fluidpay = new FluidPayClient(fluidpayConfig)
 
-            {/* Payment form/button */}
-            <PaymentForm
-              orgSlug={orgSlug}
-              jobNumber={jobNumber}
-              totalAmount={feeCalculation.totalAmount}
-            />
-          </div>
-        </div>
+  // Create invoice with FluidPay
+  const dueDate = new Date()
+  dueDate.setDate(dueDate.getDate() + 7)  // Due in 7 days
 
-        {/* Security notice */}
-        <div className="mt-6 text-center">
-          <div className="inline-flex items-center gap-2 text-sm text-gray-500">
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-              />
-            </svg>
-            <span>Secure payment powered by Kathy</span>
-          </div>
-        </div>
-      </main>
-    </div>
-  )
+  const invoice = await fluidpay.createInvoice({
+    companyName: organizationName,
+    customerFirstName,
+    customerLastName,
+    customerEmail,
+    customerPhone,
+    amount: totalAmountCents,  // FluidPay expects cents
+    description: `Deposit for Quote #${quoteNumber}`,
+    invoiceNumber: invoiceId,
+    dueDate,
+    paymentMethods: ['card', 'ach'],
+  })
+
+  // Update payment session with FluidPay details
+  await prisma.paymentSession.update({
+    where: { id: paymentSession.id },
+    data: {
+      processorPaymentId: invoice.id,
+      paymentUrl: invoice.hostedUrl,
+      status: 'pending',
+    },
+  })
+
+  // Create audit log
+  await prisma.auditLog.create({
+    data: {
+      paymentSessionId: paymentSession.id,
+      action: 'payment_initiated_from_public_page',
+      actor: 'customer',
+      metadata: {
+        quoteNumber,
+        jobNumber,
+        depositAmount,
+        depositSource,
+        processingFee: feeCalculation.feeAmount,
+        totalAmount: feeCalculation.totalAmount,
+        customerEmail,
+        customerName: `${customerFirstName} ${customerLastName}`.trim(),
+        paymentProvider: 'fluidpay',
+        fluidpayInvoiceId: invoice.id,
+      },
+    },
+  })
+
+  logger.info('FluidPay invoice created for public payment', {
+    paymentSessionId: paymentSession.id,
+    fluidpayInvoiceId: invoice.id,
+    quoteNumber,
+    jobNumber,
+    totalAmount: feeCalculation.totalAmount,
+  })
+
+  return invoice.hostedUrl
+}
+
+interface CreateRunPaymentsSessionParams {
+  organizationId: string
+  organizationName: string
+  invoiceId: string
+  jobNumber: string
+  quoteNumber: string
+  depositAmount: number
+  depositSource: string
+  totalAmount: number
+  feeCalculation: {
+    estimateAmount: number
+    feePercent: number
+    feeAmount: number
+    totalAmount: number
+  }
+  customerName: string
+  customerEmail: string
+  customerPhone?: string
+}
+
+async function createRunPaymentsSession(params: CreateRunPaymentsSessionParams): Promise<string> {
+  const {
+    organizationId,
+    organizationName,
+    invoiceId,
+    jobNumber,
+    quoteNumber,
+    depositAmount,
+    depositSource,
+    totalAmount,
+    feeCalculation,
+    customerName,
+    customerEmail,
+    customerPhone,
+  } = params
+
+  // Create payment session in database
+  const paymentSession = await prisma.paymentSession.create({
+    data: {
+      organizationId,
+      applicationName: 'SmartMoving',
+      invoiceId,
+      amount: totalAmount,
+      currency: 'USD',
+      status: 'initiated',
+      metadata: {
+        quoteNumber,
+        jobNumber,
+        depositAmount,
+        depositSource,
+        processingFee: feeCalculation.feeAmount,
+        customerName,
+        customerEmail,
+        source: 'public_payment_page',
+        paymentProvider: 'runpayments',
+      },
+    },
+  })
+
+  // Create compound invoice ID for multi-tenant isolation
+  const compoundInvoiceId = `${organizationId}:${invoiceId}`
+
+  // Create RunPayments hosted payment session
+  const runPaymentsSession = await createPaymentSession({
+    amount: totalAmount,
+    currency: 'USD',
+    invoiceId: compoundInvoiceId,
+    originalInvoiceId: invoiceId,
+    paymentSessionId: paymentSession.id,
+    description: `Deposit for Quote #${quoteNumber} - ${organizationName}`,
+    customerName,
+    customerEmail,
+    customerPhone,
+  })
+
+  // Update payment session with processor details
+  await prisma.paymentSession.update({
+    where: { id: paymentSession.id },
+    data: {
+      processorPaymentId: runPaymentsSession.id,
+      paymentUrl: runPaymentsSession.paymentUrl,
+      status: 'pending',
+    },
+  })
+
+  // Create audit log
+  await prisma.auditLog.create({
+    data: {
+      paymentSessionId: paymentSession.id,
+      action: 'payment_initiated_from_public_page',
+      actor: 'customer',
+      metadata: {
+        quoteNumber,
+        jobNumber,
+        depositAmount,
+        depositSource,
+        processingFee: feeCalculation.feeAmount,
+        totalAmount,
+        customerEmail,
+        customerName,
+        paymentProvider: 'runpayments',
+      },
+    },
+  })
+
+  logger.info('RunPayments session created for public payment', {
+    paymentSessionId: paymentSession.id,
+    quoteNumber,
+    jobNumber,
+    totalAmount,
+  })
+
+  return runPaymentsSession.paymentUrl
 }
