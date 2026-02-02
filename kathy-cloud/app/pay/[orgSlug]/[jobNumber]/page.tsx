@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import {
-  getPublicQuote,
+  SmartMovingClient,
   extractDepositAmount,
   calculateProcessingFee,
   type SmartMovingConfig,
@@ -57,7 +57,7 @@ export default async function PaymentPage({ params }: PageProps) {
   const settings = organization.settings as Record<string, unknown> | null
   const smartMovingConfig = settings?.smartMoving as SmartMovingConfig | undefined
 
-  if (!smartMovingConfig?.enabled) {
+  if (!smartMovingConfig?.enabled || !smartMovingConfig.apiKey || !smartMovingConfig.clientId) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md text-center">
@@ -74,10 +74,11 @@ export default async function PaymentPage({ params }: PageProps) {
     )
   }
 
-  // Fetch quote from SmartMoving public API
+  // Fetch quote from SmartMoving API using authenticated client
+  const smartMovingClient = new SmartMovingClient(smartMovingConfig)
   let quote
   try {
-    quote = await getPublicQuote(quoteNumber)
+    quote = await smartMovingClient.getOpportunityByQuoteNumber(quoteNumber)
   } catch {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">

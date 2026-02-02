@@ -408,55 +408,34 @@ export class SmartMovingClient {
       })
     })
   }
-}
 
-// ============================================================================
-// Public Quote API (No Authentication Required)
-// ============================================================================
+  /**
+   * Get opportunity details by quote number
+   * GET /api/opportunities/quote/{quoteNumber}
+   */
+  async getOpportunityByQuoteNumber(quoteNumber: string): Promise<SmartMovingPublicQuote> {
+    return this.retryRequest(async () => {
+      logger.info('Getting SmartMoving opportunity by quote number', { quoteNumber })
 
-const PUBLIC_QUOTE_BASE_URL = 'https://smartmoving-prod-api2.azurewebsites.net/api/public'
+      const data = await this.request<SmartMovingPublicQuote>(
+        `/opportunities/quote/${quoteNumber}`
+      )
 
-/**
- * Fetch quote from SmartMoving public API (no authentication required)
- * This endpoint is used for customer-facing payment pages
- */
-export async function getPublicQuote(quoteNumber: string): Promise<SmartMovingPublicQuote> {
-  const url = `${PUBLIC_QUOTE_BASE_URL}/quotes/${quoteNumber}`
-
-  logger.info('Fetching SmartMoving public quote', { quoteNumber, url })
-
-  try {
-    const response = await fetch(url)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      logger.error('SmartMoving public API error', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText,
+      logger.info('SmartMoving opportunity retrieved by quote number', {
         quoteNumber,
+        customerName: data.customer?.name,
+        depositAmount: data.depositAmount,
+        jobCount: data.jobs?.length,
       })
-      throw new Error(`SmartMoving public API error: ${response.status} - ${errorText}`)
-    }
 
-    const data = await response.json()
-
-    logger.info('SmartMoving public quote retrieved', {
-      quoteNumber,
-      customerName: data.customer?.name,
-      depositAmount: data.depositAmount,
-      jobCount: data.jobs?.length,
+      return data
     })
-
-    return data as SmartMovingPublicQuote
-  } catch (error) {
-    logger.error('SmartMoving public API request failed', {
-      error: error instanceof Error ? error.message : String(error),
-      quoteNumber,
-    })
-    throw error
   }
 }
+
+// ============================================================================
+// Quote Retrieval (requires authentication)
+// ============================================================================
 
 /**
  * Extract deposit amount from SmartMoving quote

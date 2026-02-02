@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma'
 import logger from '@/lib/logger'
 import { createPaymentSession } from '@/lib/runpayments-real'
 import {
-  getPublicQuote,
+  SmartMovingClient,
   extractDepositAmount,
   calculateProcessingFee,
   type SmartMovingConfig,
@@ -70,15 +70,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const settings = organization.settings as Record<string, unknown> | null
     const smartMovingConfig = settings?.smartMoving as SmartMovingConfig | undefined
 
-    if (!smartMovingConfig?.enabled) {
+    if (!smartMovingConfig?.enabled || !smartMovingConfig.apiKey || !smartMovingConfig.clientId) {
       return NextResponse.json(
         { error: 'Payment page not available for this organization' },
         { status: 400, headers: corsHeaders }
       )
     }
 
-    // Fetch quote from SmartMoving public API
-    const quote = await getPublicQuote(quoteNumber)
+    // Fetch quote from SmartMoving API using authenticated client
+    const smartMovingClient = new SmartMovingClient(smartMovingConfig)
+    const quote = await smartMovingClient.getOpportunityByQuoteNumber(quoteNumber)
 
     if (!quote) {
       return NextResponse.json(
@@ -259,15 +260,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const settings = organization.settings as Record<string, unknown> | null
     const smartMovingConfig = settings?.smartMoving as SmartMovingConfig | undefined
 
-    if (!smartMovingConfig?.enabled) {
+    if (!smartMovingConfig?.enabled || !smartMovingConfig.apiKey || !smartMovingConfig.clientId) {
       return NextResponse.json(
         { error: 'Payment page not available for this organization' },
         { status: 400, headers: corsHeaders }
       )
     }
 
-    // Fetch quote from SmartMoving public API
-    const quote = await getPublicQuote(quoteNumber)
+    // Fetch quote from SmartMoving API using authenticated client
+    const smartMovingClient = new SmartMovingClient(smartMovingConfig)
+    const quote = await smartMovingClient.getOpportunityByQuoteNumber(quoteNumber)
 
     if (!quote) {
       return NextResponse.json(
