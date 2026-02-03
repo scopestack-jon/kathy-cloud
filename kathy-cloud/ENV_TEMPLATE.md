@@ -42,6 +42,14 @@ RUNPAYMENTS_MERCHANT_ID="gp_210769cae209a568cc4942116f5a7af7"
 RUNPAYMENTS_WEBHOOK_SECRET="MiZkOuM5E0ERHFnZYQo8QzWtc1Xxl7lN"
 
 # ==================================================
+# FLUIDPAY (optional – for payment processing)
+# ==================================================
+# Get API key from https://sandbox.fluidpay.com (Sandbox) or https://app.fluidpay.com (Production)
+# FLUIDPAY_API_KEY="your-fluidpay-secret-key"
+# FLUIDPAY_ENVIRONMENT="sandbox"
+# FLUIDPAY_WEBHOOK_SECRET="your-webhook-signature-secret"
+
+# ==================================================
 # API SECURITY
 # ==================================================
 API_SECRET_KEY="dev-secret-key-change-in-production"
