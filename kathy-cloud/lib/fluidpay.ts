@@ -44,6 +44,7 @@ export interface InvoiceResponse {
 }
 
 interface FluidPayInvoiceItem {
+  status: 'pending' | 'paid'
   name: string
   unit_price: number
   quantity: number
@@ -71,6 +72,10 @@ interface FluidPayInvoiceRequest {
   payment_methods: string[]
   send_via: string
   invoice_number: string
+  allow_partial_payment?: boolean
+  enable_tip?: boolean
+  enable_tax?: boolean
+  tax_percent?: string  // Format: "5.000" for 5%
 }
 
 interface FluidPayInvoiceResponse {
@@ -220,6 +225,7 @@ export class FluidPayClient {
       },
       date_due: params.dueDate.toISOString(),
       items: [{
+        status: 'pending',
         name: params.description,
         unit_price: params.amount,  // Already in cents
         quantity: 1,
@@ -227,6 +233,10 @@ export class FluidPayClient {
       payment_methods: params.paymentMethods || ['card', 'ach'],
       send_via: 'none',  // Don't send email - we handle the redirect
       invoice_number: params.invoiceNumber,
+      allow_partial_payment: false,
+      enable_tip: false,
+      enable_tax: false,
+      tax_percent: '0.000',
     }
 
     const response = await this.request<FluidPayInvoiceResponse>('/invoice', {
@@ -264,6 +274,62 @@ export class FluidPayClient {
       status: response.data.status,
       invoiceNumber: response.data.invoice_number,
     }
+  }
+
+  /**
+   * Create a direct card transaction (sale)
+   * Used for testing connectivity and processor configuration
+   */
+  async createTransaction(params: {
+    amount: number  // in cents
+    cardNumber: string
+    expirationDate: string  // MM/YY
+    cvc: string
+    billingAddress?: {
+      firstName?: string
+      lastName?: string
+      postalCode?: string
+    }
+  }): Promise<{ id: string; status: string; amount: number }> {
+    logger.info('Creating FluidPay transaction', {
+      amount: params.amount,
+      cardLast4: params.cardNumber.slice(-4),
+    })
+
+    const requestBody = {
+      type: 'sale',
+      amount: params.amount,
+      currency: 'USD',
+      payment_method: {
+        card: {
+          entry_type: 'keyed',
+          number: params.cardNumber,
+          expiration_date: params.expirationDate,
+          cvc: params.cvc,
+        },
+      },
+      billing_address: {
+        first_name: params.billingAddress?.firstName || 'Test',
+        last_name: params.billingAddress?.lastName || 'User',
+        postal_code: params.billingAddress?.postalCode || '12345',
+      },
+    }
+
+    const response = await this.request<{
+      status: string
+      msg: string
+      data: { id: string; status: string; amount: number }
+    }>('/transaction', {
+      method: 'POST',
+      body: JSON.stringify(requestBody),
+    })
+
+    logger.info('FluidPay transaction created', {
+      id: response.data.id,
+      status: response.data.status,
+    })
+
+    return response.data
   }
 }
 
