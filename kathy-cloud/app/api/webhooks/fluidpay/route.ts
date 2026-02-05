@@ -61,9 +61,15 @@ export async function POST(request: NextRequest) {
     // Custom fields values may contain our PaymentSession UUID
     let customFieldsReferenceId: string | undefined
     if (customFields && typeof customFields === 'object') {
+      logger.info('FluidPay webhook custom_fields content', {
+        customFields: JSON.stringify(customFields),
+        keys: Object.keys(customFields),
+      })
+
       // Look for a UUID pattern in custom_fields values
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      for (const value of Object.values(customFields)) {
+      for (const [key, value] of Object.entries(customFields)) {
+        logger.debug('Checking custom field', { key, value, type: typeof value })
         if (typeof value === 'string' && uuidPattern.test(value)) {
           customFieldsReferenceId = value
           break
