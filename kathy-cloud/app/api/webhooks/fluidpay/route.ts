@@ -169,20 +169,23 @@ export async function POST(request: NextRequest) {
     const transactionStatus = event.data?.status?.toLowerCase()
 
     // FluidPay transaction statuses:
-    // - pending: Transaction initiated
-    // - settled: Payment completed successfully
+    // - pending_settlement: Payment authorized and captured, waiting to settle (treat as success)
+    // - settled: Payment fully settled
     // - declined: Payment was declined
     // - voided: Transaction was voided
     // - refunded: Transaction was refunded
 
     // Check event type and transaction status
+    // Treat pending_settlement as success since the payment is authorized and captured
     if (event.type === 'transaction_settlement' ||
         event.type === 'transaction_update' && transactionStatus === 'settled' ||
-        transactionStatus === 'settled') {
+        transactionStatus === 'settled' ||
+        transactionStatus === 'pending_settlement') {
       newStatus = 'paid_pending_consent'
       logger.info('FluidPay payment succeeded', {
         paymentSessionId: paymentSession.id,
         transactionId: event.data?.id,
+        transactionStatus,
         amount: event.data?.amount,
       })
     } else if (transactionStatus === 'declined' ||
