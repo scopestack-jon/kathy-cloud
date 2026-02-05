@@ -443,7 +443,7 @@ export function generateSppUrl(params: SppUrlParams): string {
   const { sppSlug, amount, environment, customFields } = params
 
   const baseUrl = getFluidPayBaseUrl(environment)
-  const url = new URL(`/sp/${sppSlug}`, baseUrl)
+  const url = new URL(`/spp/${sppSlug}`, baseUrl)
 
   // Add custom amount in cents
   url.searchParams.set('add_custom_amount', String(amount))
