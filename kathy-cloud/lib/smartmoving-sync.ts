@@ -220,6 +220,45 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
 
     // Calculate payment details
     const totalPaid = Number(paymentSession.amount)
+    const processingFee = (sessionMetadata?.processingFee as number) || 0
+    const preFeeAmount = totalPaid - processingFee
+
+    // Extract card info from webhook data if available
+    const cardLastFour = webhookData?.raw_event?.data?.response?.card?.last_four ||
+                         webhookData?.raw_event?.data?.response_body?.card?.last_four
+    const cardType = webhookData?.raw_event?.data?.response?.card?.card_type ||
+                     webhookData?.raw_event?.data?.response_body?.card?.card_type
+    const obfuscatedCCNumber = cardLastFour ? `****${cardLastFour}` : ''
+
+    // Record payment in SmartMoving
+    let paymentId: string | undefined
+    try {
+      const paymentResult = await smartMoving.recordPayment(opportunityId, {
+        amount: totalPaid,
+        preFeeAmount,
+        creditCardFeeAmount: processingFee,
+        paymentDate: new Date(),
+        confirmationCode: transactionId || '',
+        customerName: customerName || (sessionMetadata?.customerName as string) || 'Customer',
+        customerEmail: customerEmail || (sessionMetadata?.customerEmail as string) || '',
+        obfuscatedCCNumber,
+        creditCardType: cardType,
+        paymentCategory: smartMovingConfig.confirmCategory || 'Deposit',
+        sendReceipt: true,
+      })
+      paymentId = paymentResult.id
+      logger.info('SmartMoving payment recorded', {
+        opportunityId,
+        paymentId,
+        amount: totalPaid,
+      })
+    } catch (error) {
+      logger.error('Failed to record SmartMoving payment', {
+        opportunityId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      // Continue with job updates even if payment recording fails
+    }
 
     // Format payment note
     const paymentNote = formatPaymentNote({
@@ -269,11 +308,13 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
     const auditAction = jobErrors.length > 0 ? 'smartmoving_sync_partial' : 'smartmoving_sync_success'
     await createAuditLog(paymentSessionId, auditAction, {
       opportunityId,
+      paymentId,
       jobIds,
       jobErrors: jobErrors.length > 0 ? jobErrors : undefined,
       jobCount: jobs.length,
       quoteNumber,
       paymentAmount: totalPaid,
+      processingFee,
       transactionId,
       customerName,
       invoiceId: paymentSession.invoiceId,

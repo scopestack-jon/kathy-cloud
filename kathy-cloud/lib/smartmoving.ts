@@ -448,6 +448,74 @@ export class SmartMovingClient {
       return data
     })
   }
+
+  /**
+   * Record a payment on an opportunity
+   * POST /api/opportunities/{opportunityId}/payments/summary
+   */
+  async recordPayment(
+    opportunityId: string,
+    params: {
+      amount: number              // Total amount including fee
+      preFeeAmount: number        // Amount before processing fee
+      creditCardFeeAmount: number // Processing fee amount
+      paymentDate: Date
+      confirmationCode: string    // Transaction ID
+      customerName: string
+      customerEmail: string
+      obfuscatedCCNumber?: string // e.g., "****1111"
+      creditCardType?: string     // e.g., "Visa", "Mastercard"
+      paymentCategory?: string    // "Deposit" or "Balance"
+      sendReceipt?: boolean
+    }
+  ): Promise<{ id: string }> {
+    return this.retryRequest(async () => {
+      logger.info('Recording SmartMoving payment', {
+        opportunityId,
+        amount: params.amount,
+        preFeeAmount: params.preFeeAmount,
+        confirmationCode: params.confirmationCode,
+      })
+
+      const requestBody = {
+        amount: params.amount,
+        sendReceiptTo: params.sendReceipt !== false ? [
+          {
+            isSelected: true,
+            name: params.customerName,
+            emailAddress: params.customerEmail,
+            phoneNumbers: [],
+          },
+        ] : [],
+        source: 'API',
+        paymentDate: params.paymentDate.toISOString(),
+        isCreditCardFeeWaived: params.creditCardFeeAmount === 0,
+        creditCardFeeAmount: params.creditCardFeeAmount,
+        creditCardFeeSalesTaxAmount: 0,
+        preFeeAmount: params.preFeeAmount.toFixed(2),
+        confirmationCode: params.confirmationCode || '',
+        creditCardType: params.creditCardType || null,
+        obfuscatedCCNumber: params.obfuscatedCCNumber || '',
+        paymentCategory: params.paymentCategory || 'Deposit',
+      }
+
+      const response = await this.request<{ id: string }>(
+        `/opportunities/${opportunityId}/payments/summary`,
+        {
+          method: 'POST',
+          body: JSON.stringify(requestBody),
+        }
+      )
+
+      logger.info('SmartMoving payment recorded', {
+        opportunityId,
+        paymentId: response.id,
+        amount: params.amount,
+      })
+
+      return response
+    })
+  }
 }
 
 // ============================================================================
