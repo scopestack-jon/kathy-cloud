@@ -6,7 +6,7 @@ import {
   calculateProcessingFee,
   type SmartMovingConfig,
 } from '@/lib/smartmoving'
-import { FluidPayClient } from '@/lib/fluidpay'
+import { FluidPayClient, generateSppUrl } from '@/lib/fluidpay'
 import { createPaymentSession } from '@/lib/runpayments-real'
 import logger from '@/lib/logger'
 
@@ -159,23 +159,51 @@ export default async function PaymentPage({ params }: PageProps) {
 
   try {
     if (paymentProvider === 'fluidpay' && smartMovingConfig.fluidpay?.apiKey) {
-      // Use FluidPay Invoice API
-      paymentUrl = await createFluidPayInvoice({
-        organizationId: organization.id,
-        organizationName: organization.name,
-        invoiceId,
-        jobNumber,
-        quoteNumber,
-        depositAmount,
-        depositSource,
-        totalAmountCents: Math.round(feeCalculation.totalAmount * 100),
-        feeCalculation,
-        customerFirstName,
-        customerLastName,
-        customerEmail: quote.customer?.emailAddress || '',
-        customerPhone: quote.customer?.phoneNumber,
-        fluidpayConfig: smartMovingConfig.fluidpay,
-      })
+      const fluidpayConfig = smartMovingConfig.fluidpay
+
+      // Check if SPP is enabled and configured
+      if (fluidpayConfig.sppEnabled && fluidpayConfig.sppSlug) {
+        // Use FluidPay Simple Payment Page (SPP)
+        paymentUrl = await createFluidPaySppSession({
+          organizationId: organization.id,
+          organizationName: organization.name,
+          invoiceId,
+          jobNumber,
+          quoteNumber,
+          depositAmount,
+          depositSource,
+          totalAmountCents: Math.round(feeCalculation.totalAmount * 100),
+          feeCalculation,
+          customerFirstName,
+          customerLastName,
+          customerEmail: quote.customer?.emailAddress || '',
+          customerPhone: quote.customer?.phoneNumber,
+          fluidpayConfig: {
+            apiKey: fluidpayConfig.apiKey,
+            environment: fluidpayConfig.environment,
+            sppSlug: fluidpayConfig.sppSlug,
+            sppCustomFields: fluidpayConfig.sppCustomFields,
+          },
+        })
+      } else {
+        // Use FluidPay Invoice API (fallback)
+        paymentUrl = await createFluidPayInvoice({
+          organizationId: organization.id,
+          organizationName: organization.name,
+          invoiceId,
+          jobNumber,
+          quoteNumber,
+          depositAmount,
+          depositSource,
+          totalAmountCents: Math.round(feeCalculation.totalAmount * 100),
+          feeCalculation,
+          customerFirstName,
+          customerLastName,
+          customerEmail: quote.customer?.emailAddress || '',
+          customerPhone: quote.customer?.phoneNumber,
+          fluidpayConfig,
+        })
+      }
     } else {
       // Use RunPayments (legacy)
       paymentUrl = await createRunPaymentsSession({
@@ -349,6 +377,146 @@ async function createFluidPayInvoice(params: CreateFluidPayInvoiceParams): Promi
   })
 
   return invoice.hostedUrl
+}
+
+interface CreateFluidPaySppSessionParams {
+  organizationId: string
+  organizationName: string
+  invoiceId: string
+  jobNumber: string
+  quoteNumber: string
+  depositAmount: number
+  depositSource: string
+  totalAmountCents: number
+  feeCalculation: {
+    estimateAmount: number
+    feePercent: number
+    feeAmount: number
+    totalAmount: number
+  }
+  customerFirstName: string
+  customerLastName: string
+  customerEmail: string
+  customerPhone?: string
+  fluidpayConfig: {
+    apiKey: string
+    environment: 'sandbox' | 'production'
+    sppSlug: string
+    sppCustomFields?: {
+      referenceId: string
+      emailId?: string
+      nameId?: string
+      quoteId?: string
+    }
+  }
+}
+
+async function createFluidPaySppSession(params: CreateFluidPaySppSessionParams): Promise<string> {
+  const {
+    organizationId,
+    invoiceId,
+    jobNumber,
+    quoteNumber,
+    depositAmount,
+    depositSource,
+    totalAmountCents,
+    feeCalculation,
+    customerFirstName,
+    customerLastName,
+    customerEmail,
+    customerPhone,
+    fluidpayConfig,
+  } = params
+
+  // Create payment session in database first (generates reference ID)
+  const paymentSession = await prisma.paymentSession.create({
+    data: {
+      organizationId,
+      applicationName: 'SmartMoving',
+      invoiceId,
+      amount: feeCalculation.totalAmount,
+      currency: 'USD',
+      status: 'pending',
+      metadata: {
+        quoteNumber,
+        jobNumber,
+        depositAmount,
+        depositSource,
+        processingFee: feeCalculation.feeAmount,
+        customerName: `${customerFirstName} ${customerLastName}`.trim(),
+        customerEmail,
+        customerPhone,
+        source: 'public_payment_page',
+        paymentProvider: 'fluidpay_spp',
+      },
+    },
+  })
+
+  // Build custom fields map using configured field IDs
+  const customFields: Record<string, string> = {}
+  const fieldConfig = fluidpayConfig.sppCustomFields
+
+  if (fieldConfig?.referenceId) {
+    customFields[fieldConfig.referenceId] = paymentSession.id
+  }
+  if (fieldConfig?.emailId && customerEmail) {
+    customFields[fieldConfig.emailId] = customerEmail
+  }
+  if (fieldConfig?.nameId) {
+    customFields[fieldConfig.nameId] = `${customerFirstName} ${customerLastName}`.trim()
+  }
+  if (fieldConfig?.quoteId) {
+    customFields[fieldConfig.quoteId] = quoteNumber
+  }
+
+  // Generate SPP URL
+  const sppUrl = generateSppUrl({
+    sppSlug: fluidpayConfig.sppSlug,
+    amount: totalAmountCents,
+    environment: fluidpayConfig.environment,
+    customFields,
+  })
+
+  // Update payment session with URL
+  await prisma.paymentSession.update({
+    where: { id: paymentSession.id },
+    data: {
+      paymentUrl: sppUrl,
+    },
+  })
+
+  // Create audit log
+  await prisma.auditLog.create({
+    data: {
+      paymentSessionId: paymentSession.id,
+      action: 'payment_initiated_from_public_page',
+      actor: 'customer',
+      metadata: {
+        quoteNumber,
+        jobNumber,
+        depositAmount,
+        depositSource,
+        processingFee: feeCalculation.feeAmount,
+        totalAmount: feeCalculation.totalAmount,
+        customerEmail,
+        customerName: `${customerFirstName} ${customerLastName}`.trim(),
+        paymentProvider: 'fluidpay_spp',
+        sppSlug: fluidpayConfig.sppSlug,
+        customFields,
+      },
+    },
+  })
+
+  logger.info('FluidPay SPP session created for public payment', {
+    paymentSessionId: paymentSession.id,
+    sppSlug: fluidpayConfig.sppSlug,
+    quoteNumber,
+    jobNumber,
+    totalAmount: feeCalculation.totalAmount,
+    hasCustomFields: Object.keys(customFields).length > 0,
+  })
+
+  return sppUrl
 }
 
 interface CreateRunPaymentsSessionParams {

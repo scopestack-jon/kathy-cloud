@@ -419,3 +419,42 @@ export function getFluidPayBaseUrl(environment: 'sandbox' | 'production'): strin
     ? 'https://app.fluidpay.com'
     : 'https://sandbox.fluidpay.com'
 }
+
+// ============================================================================
+// Simple Payment Page (SPP) URL Generation
+// ============================================================================
+
+export interface SppUrlParams {
+  sppSlug: string            // SPP page slug (e.g., "smart")
+  amount: number             // Amount in cents
+  environment: 'sandbox' | 'production'
+  customFields?: Record<string, string>  // Map of field ID to value
+}
+
+/**
+ * Generate a Simple Payment Page (SPP) URL with pre-filled amount and custom fields
+ *
+ * SPP URLs bypass the Invoice API by using a pre-configured hosted payment page.
+ * Customer info and reference IDs are passed via custom_fields parameter.
+ *
+ * URL format: https://{env}.fluidpay.com/sp/{slug}?add_custom_amount={cents}&custom_fields={id}:{value},{id}:{value}
+ */
+export function generateSppUrl(params: SppUrlParams): string {
+  const { sppSlug, amount, environment, customFields } = params
+
+  const baseUrl = getFluidPayBaseUrl(environment)
+  const url = new URL(`/sp/${sppSlug}`, baseUrl)
+
+  // Add custom amount in cents
+  url.searchParams.set('add_custom_amount', String(amount))
+
+  // Add custom fields if provided
+  if (customFields && Object.keys(customFields).length > 0) {
+    const customFieldsStr = Object.entries(customFields)
+      .map(([fieldId, value]) => `${fieldId}:${encodeURIComponent(value)}`)
+      .join(',')
+    url.searchParams.set('custom_fields', customFieldsStr)
+  }
+
+  return url.toString()
+}

@@ -49,24 +49,54 @@ export async function POST(request: NextRequest) {
       amount: event.data?.amount,
     })
 
-    // Extract invoice number from transaction data
-    // FluidPay stores our invoice ID in order_id or po_number
+    // Extract reference information from transaction data
+    // FluidPay stores our invoice ID in order_id or po_number (Invoice API)
+    // SPP transactions pass PaymentSession ID via custom_fields
     const orderId = event.data?.order_id
     const poNumber = event.data?.po_number
+    const customFields = event.data?.custom_fields
     const invoiceNumber = orderId || poNumber
+
+    // Extract PaymentSession ID from custom_fields (SPP transactions)
+    // Custom fields values may contain our PaymentSession UUID
+    let customFieldsReferenceId: string | undefined
+    if (customFields && typeof customFields === 'object') {
+      // Look for a UUID pattern in custom_fields values
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      for (const value of Object.values(customFields)) {
+        if (typeof value === 'string' && uuidPattern.test(value)) {
+          customFieldsReferenceId = value
+          break
+        }
+      }
+    }
 
     logger.info('FluidPay webhook invoice lookup', {
       orderId,
       poNumber,
       invoiceNumber,
+      customFieldsReferenceId,
+      hasCustomFields: !!customFields,
       transactionId: event.data?.id,
     })
 
-    // Try to find payment session by invoice number or processor payment ID
+    // Try to find payment session by various methods
     let paymentSession = null
 
-    // Try by invoice number first
-    if (invoiceNumber) {
+    // Method 1: Try by PaymentSession ID from custom_fields (SPP)
+    if (customFieldsReferenceId) {
+      paymentSession = await prisma.paymentSession.findUnique({
+        where: { id: customFieldsReferenceId },
+      })
+
+      logger.info('Custom fields reference lookup result', {
+        found: !!paymentSession,
+        customFieldsReferenceId,
+      })
+    }
+
+    // Method 2: Try by invoice number (Invoice API)
+    if (!paymentSession && invoiceNumber) {
       paymentSession = await prisma.paymentSession.findFirst({
         where: {
           invoiceId: invoiceNumber,
@@ -81,7 +111,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Fallback: Try by processor payment ID (FluidPay invoice/transaction ID)
+    // Method 3: Fallback - Try by processor payment ID (FluidPay invoice/transaction ID)
     if (!paymentSession && event.data?.id) {
       paymentSession = await prisma.paymentSession.findFirst({
         where: { processorPaymentId: event.data.id },
@@ -192,6 +222,8 @@ export async function POST(request: NextRequest) {
           amount: event.data?.amount,
           customer_name: customerName,
           new_status: newStatus,
+          custom_fields_reference: customFieldsReferenceId,
+          lookup_method: customFieldsReferenceId ? 'custom_fields' : (invoiceNumber ? 'invoice_number' : 'processor_id'),
           raw_event: JSON.parse(JSON.stringify(event)),  // Convert to plain object for Prisma
         },
       },

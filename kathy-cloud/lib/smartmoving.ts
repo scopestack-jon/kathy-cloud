@@ -18,6 +18,15 @@ export interface SmartMovingConfig {
   fluidpay?: {
     apiKey: string
     environment: 'sandbox' | 'production'
+    // Simple Payment Page (SPP) configuration
+    sppEnabled?: boolean  // Use SPP instead of Invoice API
+    sppSlug?: string  // SPP page slug (e.g., "smart")
+    sppCustomFields?: {
+      referenceId: string  // Field ID for PaymentSession UUID
+      emailId?: string     // Field ID for customer email
+      nameId?: string      // Field ID for customer name
+      quoteId?: string     // Field ID for SmartMoving quote number
+    }
   }
 }
 
