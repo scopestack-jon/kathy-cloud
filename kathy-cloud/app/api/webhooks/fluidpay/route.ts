@@ -59,22 +59,27 @@ export async function POST(request: NextRequest) {
 
     // Extract PaymentSession ID from custom_fields (SPP transactions)
     // Custom fields values may contain our PaymentSession UUID
+    // Note: FluidPay sends custom_fields values as arrays, e.g. {"fieldId": ["value"]}
     let customFieldsReferenceId: string | undefined
     if (customFields && typeof customFields === 'object') {
-      logger.info('FluidPay webhook custom_fields content', {
-        customFields: JSON.stringify(customFields),
-        keys: Object.keys(customFields),
-      })
-
       // Look for a UUID pattern in custom_fields values
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       for (const [key, value] of Object.entries(customFields)) {
-        logger.debug('Checking custom field', { key, value, type: typeof value })
-        if (typeof value === 'string' && uuidPattern.test(value)) {
-          customFieldsReferenceId = value
-          break
+        // Handle both string values and array values (FluidPay sends arrays)
+        const valuesToCheck = Array.isArray(value) ? value : [value]
+        for (const v of valuesToCheck) {
+          if (typeof v === 'string' && uuidPattern.test(v)) {
+            customFieldsReferenceId = v
+            break
+          }
         }
+        if (customFieldsReferenceId) break
       }
+
+      logger.info('FluidPay webhook custom_fields parsed', {
+        foundReferenceId: !!customFieldsReferenceId,
+        referenceId: customFieldsReferenceId,
+      })
     }
 
     logger.info('FluidPay webhook invoice lookup', {
