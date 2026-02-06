@@ -334,7 +334,7 @@ async function createFluidPayInvoice(params: CreateFluidPayInvoiceParams): Promi
     description: `Deposit for Quote #${quoteNumber}`,
     invoiceNumber: invoiceId,
     dueDate,
-    paymentMethods: ['card', 'ach'],
+    paymentMethods: ['card'],  // Card-only to avoid ACH processor requirement
   })
 
   // Update payment session with FluidPay details
