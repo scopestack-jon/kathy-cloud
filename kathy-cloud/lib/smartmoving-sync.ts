@@ -253,12 +253,19 @@ export async function syncPaymentToSmartMoving(paymentSessionId: string): Promis
         amount: totalPaid,
       })
     } catch (error) {
-      logger.error('Failed to record SmartMoving payment', {
+      logger.error('Failed to record SmartMoving payment (continuing with job updates)', {
         opportunityId,
         error: error instanceof Error ? error.message : String(error),
       })
       // Continue with job updates even if payment recording fails
+      // The payments API endpoint may not be available on the public API
     }
+
+    logger.info('Proceeding to job notes and confirmation', {
+      opportunityId,
+      paymentId,
+      jobCount: jobs.length,
+    })
 
     // Format payment note
     const paymentNote = formatPaymentNote({

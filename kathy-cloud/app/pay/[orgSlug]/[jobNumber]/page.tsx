@@ -144,8 +144,10 @@ export default async function PaymentPage({ params }: PageProps) {
     paymentProvider: smartMovingConfig.paymentProvider || 'runpayments',
   })
 
-  // Create invoice ID
+  // Create invoice ID (internal tracking - can have hyphens)
   const invoiceId = `SM-${quoteNumber}-${jobNumber}`
+  // FluidPay invoice number must be alphanumeric only
+  const fluidpayInvoiceNumber = `SM${quoteNumber}${jobNumber.replace(/-/g, '')}`.slice(0, 50)
 
   // Split customer name
   const customerName = quote.customer?.name || 'Customer'
@@ -191,6 +193,7 @@ export default async function PaymentPage({ params }: PageProps) {
           organizationId: organization.id,
           organizationName: organization.name,
           invoiceId,
+          fluidpayInvoiceNumber,
           jobNumber,
           quoteNumber,
           depositAmount,
@@ -255,6 +258,7 @@ interface CreateFluidPayInvoiceParams {
   organizationId: string
   organizationName: string
   invoiceId: string
+  fluidpayInvoiceNumber: string
   jobNumber: string
   quoteNumber: string
   depositAmount: number
@@ -281,6 +285,7 @@ async function createFluidPayInvoice(params: CreateFluidPayInvoiceParams): Promi
     organizationId,
     organizationName,
     invoiceId,
+    fluidpayInvoiceNumber,
     jobNumber,
     quoteNumber,
     depositAmount,
@@ -332,7 +337,7 @@ async function createFluidPayInvoice(params: CreateFluidPayInvoiceParams): Promi
     customerPhone,
     amount: totalAmountCents,  // FluidPay expects cents
     description: `Deposit for Quote #${quoteNumber}`,
-    invoiceNumber: invoiceId,
+    invoiceNumber: fluidpayInvoiceNumber,
     dueDate,
     paymentMethods: ['card'],  // Card-only to avoid ACH processor requirement
   })

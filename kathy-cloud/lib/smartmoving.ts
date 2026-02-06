@@ -219,6 +219,7 @@ export class SmartMovingClient {
 
   /**
    * Retry logic wrapper for transient failures
+   * Does not retry on 4xx errors (client errors like 404)
    */
   private async retryRequest<T>(
     fn: () => Promise<T>,
@@ -232,10 +233,17 @@ export class SmartMovingClient {
         return await fn()
       } catch (error) {
         lastError = error as Error
+        const errorMessage = error instanceof Error ? error.message : String(error)
+
+        // Don't retry on 4xx errors (client errors) - they won't succeed on retry
+        if (errorMessage.includes('404') || errorMessage.includes('400') ||
+            errorMessage.includes('401') || errorMessage.includes('403')) {
+          throw lastError
+        }
 
         if (attempt < maxRetries) {
           logger.warn(`SmartMoving API retry ${attempt}/${maxRetries}`, {
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
           })
           await new Promise(resolve => setTimeout(resolve, delay * attempt))
         }
